@@ -1,9 +1,13 @@
 package com.nucleodb.spring;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nucleodb.library.NucleoDB;
 import com.nucleodb.library.database.utils.Serializer;
 import com.nucleodb.spring.impl.NDBConnectionRepositoryImpl;
 import com.nucleodb.spring.impl.NDBDataEntryRepositoryImpl;
+import com.nucleodb.spring.query.QueryParser;
+import com.nucleodb.spring.query.exec.NDBDataEntryRepositoryQuery;
 import com.nucleodb.spring.types.NDBConnRepository;
 import com.nucleodb.spring.types.NDBDataRepository;
 import org.springframework.data.projection.ProjectionFactory;
@@ -21,7 +25,11 @@ import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 public class NDBRepositoryFactory extends RepositoryFactorySupport{
   private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
@@ -80,6 +88,22 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
       this.evaluationContextProvider = evaluationContextProvider;
     }
 
+    private static Map<String, RepositoryQuery> cachedHandlers = new TreeMap<>();
+
+    private RepositoryQuery getOrCreateRepositoryQueryHandler(Method method, RepositoryMetadata metadata){
+      RepositoryQuery repositoryQuery = cachedHandlers.get(metadata.getRepositoryInterface().getName() + "." + method.getName());
+      if(repositoryQuery!=null){
+        return repositoryQuery;
+      }
+      if(NDBDataRepository.class.isAssignableFrom(metadata.getRepositoryInterface())) {
+        repositoryQuery = new NDBDataEntryRepositoryQuery(this.nucleoDB, metadata.getDomainType(), method);
+      }else if(NDBConnRepository.class.isAssignableFrom(metadata.getRepositoryInterface())){
+        return null;// need to implement
+      }
+      cachedHandlers.put(metadata.getRepositoryInterface().getName() + "." + method.getName(), repositoryQuery);
+      return repositoryQuery;
+    }
+
     @Override
     public RepositoryQuery resolveQuery(
         Method method,
@@ -87,21 +111,7 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
         ProjectionFactory factory,
         NamedQueries namedQueries
     ) {
-
-      return new RepositoryQuery(){
-        @Override
-        public Object execute(Object[] parameters) {
-          Serializer.log(method.getName());
-          Serializer.log(parameters);
-
-          return null;
-        }
-
-        @Override
-        public QueryMethod getQueryMethod() {
-          return new QueryMethod(method, metadata, factory);
-        }
-      };
+      return getOrCreateRepositoryQueryHandler(method, metadata);
     }
   }
 
