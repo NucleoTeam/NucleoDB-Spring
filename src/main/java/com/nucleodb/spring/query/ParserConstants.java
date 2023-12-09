@@ -18,7 +18,7 @@ public class ParserConstants{
       put("query|By$", new String[]{"findBy", "returnObject", "operations"});
       put("get|By$", new String[]{"findBy", "returnObject", "operations"});
       put("stream|By$", new String[]{"streamBy", "returnObject", "operations"});
-      put("search|By$", new String[]{"searchBy", "returnObject", "operations"});
+      put("search|By$", new String[]{"findBy", "returnObject", "operations"});
       put("count|By$", new String[]{"countBy", "returnObject", "operations"});
       put("exists|By$", new String[]{"existsBy", "returnObject", "operations"});
       put("deleteBy$", new String[]{"deleteBy", "operations"});

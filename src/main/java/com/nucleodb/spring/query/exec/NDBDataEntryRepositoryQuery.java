@@ -23,8 +23,11 @@ import org.springframework.data.repository.query.RepositoryQuery;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -110,7 +113,68 @@ public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
         }
       }
     }
-    return entries;
+    if(query.getMethod().equals("findBy")){
+      Stream<DataEntry> dataEntryStream = entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass()));
+      if(Collection.class.isAssignableFrom(method.getReturnType())) {
+        Type[] actualTypeArguments = ((ParameterizedType) method.getReturnType().getGenericSuperclass()).getActualTypeArguments();
+        Class<?> returnClass = DataEntry.class;
+        if (actualTypeArguments.length == 1) {
+          returnClass = (Class<?>) actualTypeArguments[0];
+        }
+        if (method.getReturnType() == List.class) {
+          if(DataEntry.class.isAssignableFrom(returnClass)){
+            return dataEntryStream.collect(Collectors.toList());
+          }else{
+            if(entries.size()>0){
+              Object data = dataEntryStream.findFirst().get().getData();
+              if(data.getClass()==returnClass){
+                return dataEntryStream.map(e->e.getData()).collect(Collectors.toList());
+              }
+            }
+          }
+        }else if (method.getReturnType() == Set.class) {
+          if(DataEntry.class.isAssignableFrom(returnClass)){
+            return dataEntryStream.collect(Collectors.toSet());
+          }else{
+            if(entries.size()>0){
+              Object data = dataEntryStream.findFirst().get().getData();
+              if(data.getClass()==returnClass){
+                return dataEntryStream.map(e->e.getData()).collect(Collectors.toSet());
+              }
+            }
+          }
+        }
+      }else if(DataEntry.class.isAssignableFrom(method.getReturnType())){
+        return dataEntryStream.findFirst();
+      }else{
+        if(entries.size()>0) {
+          Object data = dataEntryStream.findFirst().get().getData();
+          if(data.getClass() == method.getReturnType()){
+            return data;
+          }
+        }
+      }
+    }else if(query.getMethod().equals("streamBy")){
+      return entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass()));
+    }else if(query.getMethod().equals("deleteBy")){
+      CountDownLatch countDownLatch = new CountDownLatch(entries.size());
+      entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass())).forEach(e->{
+        table.deleteAsync(e, (dataEntry)->{
+          countDownLatch.countDown();
+        });
+      });
+      try {
+        countDownLatch.await(5, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    }else if(query.getMethod().equals("countBy")){
+      return entries.size();
+    }else if(query.getMethod().equals("existsBy")){
+      return entries.size()>0;
+    }
+
+    return null;
   }
 
   @Override
