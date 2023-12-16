@@ -16,6 +16,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 
   private @NonNull String[] scanPackages;
   private @NonNull String kafkaServers;
+  private @Nullable String readToTime;
   private @NonNull NucleoDB.DBType dbType;
 
 
@@ -36,6 +37,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
         nucleoDB = new NucleoDB(
             kafkaServers,
             dbType,
+            readToTime,
             scanPackages
         );
       } catch (IncorrectDataEntryClassException e) {

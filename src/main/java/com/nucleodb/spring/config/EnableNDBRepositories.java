@@ -23,6 +23,8 @@ public @interface EnableNDBRepositories{
   String kafkaServers() default "127.0.0.1:19092,127.0.0.1:29092,127.0.0.1:39092";
   NucleoDB.DBType dbType() default NucleoDB.DBType.ALL;
 
+  String readToTime();
+
   String[] scanPackages() default {"com.nucleocore.library.database.tables.connection"};
   String[] value() default {};
 
