@@ -3,6 +3,7 @@ package com.nucleodb.spring;
 import com.nucleodb.library.NucleoDB;
 import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryClassException;
 import com.nucleodb.library.database.utils.exceptions.MissingDataEntryConstructorsException;
+import com.nucleodb.library.mqs.config.MQSConfiguration;
 import org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
 import org.springframework.data.repository.Repository;
@@ -10,12 +11,15 @@ import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
+import java.beans.IntrospectionException;
+import java.lang.reflect.InvocationTargetException;
+
 
 public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
     extends RepositoryFactoryBeanSupport<T, S, ID>{
 
   private @NonNull String[] scanPackages;
-  private @NonNull String kafkaServers;
+  private @NonNull String mqsConfiguration;
   private @Nullable String readToTime;
   private @NonNull NucleoDB.DBType dbType;
 
@@ -34,15 +38,31 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
   protected RepositoryFactorySupport createRepositoryFactory() {
     if(nucleoDB==null) {
       try {
+        MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
+
         nucleoDB = new NucleoDB(
-            kafkaServers,
             dbType,
             readToTime,
+            c-> c.setMqsConfiguration(mqsConfigurationInstance),
+            c-> c.setMqsConfiguration(mqsConfigurationInstance),
             scanPackages
         );
+
       } catch (IncorrectDataEntryClassException e) {
         throw new RuntimeException(e);
       } catch (MissingDataEntryConstructorsException e) {
+        throw new RuntimeException(e);
+      } catch (IntrospectionException e) {
+        throw new RuntimeException(e);
+      } catch (InvocationTargetException e) {
+        throw new RuntimeException(e);
+      } catch (NoSuchMethodException e) {
+        throw new RuntimeException(e);
+      } catch (InstantiationException e) {
+        throw new RuntimeException(e);
+      } catch (IllegalAccessException e) {
+        throw new RuntimeException(e);
+      } catch (ClassNotFoundException e) {
         throw new RuntimeException(e);
       }
     }
@@ -63,10 +83,6 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 
   public void setScanPackages(@NonNull String[] scanPackages) {
     this.scanPackages = scanPackages;
-  }
-
-  public void setKafkaServers(@NonNull String kafkaServers) {
-    this.kafkaServers = kafkaServers;
   }
 
   public void setDbType(@NonNull NucleoDB.DBType dbType) {

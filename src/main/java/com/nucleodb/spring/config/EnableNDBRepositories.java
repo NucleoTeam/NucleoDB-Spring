@@ -1,6 +1,9 @@
 package com.nucleodb.spring.config;
 
 import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.mqs.config.MQSConfiguration;
+import com.nucleodb.library.mqs.config.MQSSettings;
+import com.nucleodb.library.mqs.kafka.KafkaConfiguration;
 import com.nucleodb.spring.NDBRepositoryFactoryBean;
 import org.springframework.context.annotation.Import;
 
@@ -20,8 +23,9 @@ import org.springframework.data.repository.query.QueryLookupStrategy.Key;
 @Inherited
 @Import(NDBRepositoryRegistrar.class)
 public @interface EnableNDBRepositories{
-  String kafkaServers() default "127.0.0.1:19092,127.0.0.1:29092,127.0.0.1:39092";
   NucleoDB.DBType dbType() default NucleoDB.DBType.ALL;
+
+  String mqsConfiguration() default "com.nucleodb.library.mqs.kafka.KafkaConfiguration";
 
   String readToTime();
 
