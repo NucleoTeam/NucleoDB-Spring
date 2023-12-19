@@ -40,7 +40,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
       try {
         MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
 
-        if(!readToTime.isEmpty()) {
+        if(readToTime!=null && !readToTime.isEmpty()) {
           nucleoDB = new NucleoDB(
               dbType,
               readToTime,
