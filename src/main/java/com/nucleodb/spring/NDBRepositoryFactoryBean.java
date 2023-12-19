@@ -20,7 +20,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 
   private @NonNull String[] scanPackages;
   private @NonNull String mqsConfiguration;
-  private @Nullable String readToTime;
+  private @NonNull String readToTime;
   private @NonNull NucleoDB.DBType dbType;
 
 
@@ -40,13 +40,22 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
       try {
         MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
 
-        nucleoDB = new NucleoDB(
-            dbType,
-            readToTime,
-            c-> c.setMqsConfiguration(mqsConfigurationInstance),
-            c-> c.setMqsConfiguration(mqsConfigurationInstance),
-            scanPackages
-        );
+        if(!readToTime.isEmpty()) {
+          nucleoDB = new NucleoDB(
+              dbType,
+              readToTime,
+              c -> c.setMqsConfiguration(mqsConfigurationInstance),
+              c -> c.setMqsConfiguration(mqsConfigurationInstance),
+              scanPackages
+          );
+        }else{
+          nucleoDB = new NucleoDB(
+              dbType,
+              c -> c.setMqsConfiguration(mqsConfigurationInstance),
+              c -> c.setMqsConfiguration(mqsConfigurationInstance),
+              scanPackages
+          );
+        }
 
       } catch (IncorrectDataEntryClassException e) {
         throw new RuntimeException(e);
@@ -87,6 +96,14 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 
   public void setDbType(@NonNull NucleoDB.DBType dbType) {
     this.dbType = dbType;
+  }
+
+  public void setMqsConfiguration(@NonNull String mqsConfiguration) {
+    this.mqsConfiguration = mqsConfiguration;
+  }
+
+  public void setReadToTime(@NonNull String readToTime) {
+    this.readToTime = readToTime;
   }
   //  @Bean
 //  public NucleoDB createNucleoDB(ApplicationContext ctx) throws IncorrectDataEntryClassException, MissingDataEntryConstructorsException {

@@ -27,7 +27,7 @@ public @interface EnableNDBRepositories{
 
   String mqsConfiguration() default "com.nucleodb.library.mqs.kafka.KafkaConfiguration";
 
-  String readToTime();
+  String readToTime() default "";
 
   String[] scanPackages() default {"com.nucleocore.library.database.tables.connection"};
   String[] value() default {};

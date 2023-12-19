@@ -46,6 +46,10 @@ public class NDBRepositoryConfigurationExtension extends RepositoryConfiguration
     if(mqsConfig.isPresent()){
       builder.addPropertyValue("mqsConfiguration", mqsConfig.get());
     }
+    Optional<String> readToTime = config.getAttribute("readToTime");
+    if(readToTime.isPresent()){
+      builder.addPropertyValue("readToTime", readToTime.get());
+    }
     Optional<NucleoDB.DBType> dbType = config.getAttribute("dbType", NucleoDB.DBType.class);
     if(dbType.isPresent()){
       builder.addPropertyValue("dbType", dbType.get());
