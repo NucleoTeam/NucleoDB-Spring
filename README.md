@@ -15,7 +15,7 @@ repositories {
     maven { url "https://nexus.synload.com/repository/maven-repo-releases/" }
 }
 dependencies {
-    implementation 'com.nucleodb:library:1.13.18'
+    implementation 'com.nucleodb:spring:3.3.13'
 }
 ```
 
