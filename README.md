@@ -19,20 +19,27 @@ dependencies {
 }
 ```
 
-##### Initializing DB
+###### Initializing DB
 ```java
-import com.nucleodb.library.NucleoDB;
 
+@SpringBootApplication
+@EnableNDBRepositories(
+        dbType = NucleoDB.DBType.NO_LOCAL, // does not create a disk of current up-to-date version of DB
+        // Feature: Read To Time, will read only changes equal to or before the date set.
+        //readToTime = "2023-12-17T00:42:32.906539Z",
+        scanPackages = {
+                "com.package.string" // scan for @Table classes
+        },
+        basePackages = "com.package.string.repos"
+)
 class Application{
   public static void main(String[] args) {
-    NucleoDB nucleoDB = new NucleoDB(
-        NucleoDB.DBType.NO_LOCAL,
-        "com.package.string"
-    );
+    SpringApplication.run(Application.class);
   }
 }
 ```
 
+###### DataEntry model files
 ```java
 
 import java.io.Serializable;
@@ -58,36 +65,38 @@ public class AuthorDE extends DataEntry<Author>{
 }
 ```
 
-##### Read data
+###### Repository for DataEntry
 ```java
-class Application {
-  public static void main(String[] args) {
-    Set<DataEntry> first = nucleoDB.getTable(Author.class).get("name", "test", new DataEntryProjection(){{
-      setWritable(true);
-    }});
+@Repository
+public interface AuthorDataRepository extends NDBDataRepository<AuthorDE, String>{
+  Set<AuthorDE> findByNameAndKey(String name, String key);
+  Author findByName(String name);
+  void deleteByName(String name);
+}
+```
+
+###### Connection model files
+```java
+@Conn("CONNECTION_BETWEEN_DE")
+public class ConnectionBetweenDataEntryClasses extends Connection<ConnectingToDataEntryDE, ConnectingFromDataEntryDE>{
+  public ConnectionBetweenDataEntryClasses() {
+  }
+
+  public ConnectionBetweenDataEntryClasses(ConnectingFromDataEntryDE from, ConnectingToDataEntryDE to) {
+    super(from, to);
+  }
+
+  public ConnectionBetweenDataEntryClasses(ConnectingFromDataEntryDE from, ConnectingToDataEntryDE to, Map<String, String> metadata) {
+    super(from, to, metadata);
   }
 }
 ```
 
-##### Write data
+###### Repository for Connections
 
 ```java
-class Application{
-  public static void main(String[] args) {
-    AuthorDE test = new AuthorDE(new Author("test"));
-    nucleoDB.getTable(Author.class).saveSync(test);
-  }
-}
-```
-
-##### Delete data
-
-```java
-class Application{
-  public static void main(String[] args) { 
-    // read data 
-    // var author = AuthorDE()
-    nucleoDB.getTable(Author.class).deleteSync(author);
-  }
+@Repository
+public interface ConnectionRepository extends NDBConnRepository<ConnectionBetweenDataEntryClasses, String, ConnectingFromDataEntryDE, ConnectingFromDataEntryDE>{
+  
 }
 ```
