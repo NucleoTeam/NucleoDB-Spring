@@ -44,15 +44,15 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
           nucleoDB = new NucleoDB(
               dbType,
               readToTime,
-              c -> c.setMqsConfiguration(mqsConfigurationInstance),
-              c -> c.setMqsConfiguration(mqsConfigurationInstance),
+              c -> c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance),
+              c -> c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance),
               scanPackages
           );
         }else{
           nucleoDB = new NucleoDB(
               dbType,
-              c -> c.setMqsConfiguration(mqsConfigurationInstance),
-              c -> c.setMqsConfiguration(mqsConfigurationInstance),
+              c -> c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance),
+              c -> c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance),
               scanPackages
           );
         }
