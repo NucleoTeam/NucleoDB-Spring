@@ -1,9 +1,27 @@
 package com.nucleodb.spring;
 
 import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.modifications.ConnectionCreate;
+import com.nucleodb.library.database.modifications.ConnectionDelete;
+import com.nucleodb.library.database.modifications.ConnectionUpdate;
+import com.nucleodb.library.database.modifications.Create;
+import com.nucleodb.library.database.modifications.Delete;
+import com.nucleodb.library.database.modifications.Update;
+import com.nucleodb.library.database.tables.annotation.Conn;
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.table.DataEntry;
 import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryClassException;
 import com.nucleodb.library.database.utils.exceptions.MissingDataEntryConstructorsException;
+import com.nucleodb.library.event.ConnectionEventListener;
+import com.nucleodb.library.event.DataTableEventListener;
 import com.nucleodb.library.mqs.config.MQSConfiguration;
+import com.nucleodb.spring.events.ConnectionCreatedEvent;
+import com.nucleodb.spring.events.ConnectionDeletedEvent;
+import com.nucleodb.spring.events.ConnectionUpdatedEvent;
+import com.nucleodb.spring.events.DataEntryCreatedEvent;
+import com.nucleodb.spring.events.DataEntryDeletedEvent;
+import com.nucleodb.spring.events.DataEntryUpdatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
 import org.springframework.data.repository.Repository;
@@ -23,6 +41,8 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
   private @NonNull String readToTime;
   private @NonNull NucleoDB.DBType dbType;
 
+  private ApplicationEventPublisher publisher;
+
 
   private static @Nullable NucleoDB nucleoDB = null;
 
@@ -40,19 +60,33 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
       try {
         MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
 
+        ConnectionEventListener connectionEventListener = connectionEventListener();
+        DataTableEventListener dataTableEventListener = dataTableEventListener();
         if(readToTime!=null && !readToTime.isEmpty()) {
           nucleoDB = new NucleoDB(
               dbType,
               readToTime,
-              c -> c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance),
-              c -> c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance),
+              c -> {
+                c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance);
+                c.getConnectionConfig().setEventListener(connectionEventListener);
+              },
+              c -> {
+                c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
+                c.getDataTableConfig().setEventListener(dataTableEventListener);
+              },
               scanPackages
           );
         }else{
           nucleoDB = new NucleoDB(
               dbType,
-              c -> c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance),
-              c -> c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance),
+              c -> {
+                c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance);
+                c.getConnectionConfig().setEventListener(connectionEventListener);
+              },
+              c -> {
+                c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
+                c.getDataTableConfig().setEventListener(dataTableEventListener);
+              },
               scanPackages
           );
         }
@@ -75,7 +109,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
         throw new RuntimeException(e);
       }
     }
-    return new NDBRepositoryFactory(nucleoDB);
+    return new NDBRepositoryFactory(nucleoDB, publisher);
   }
 
 
@@ -105,10 +139,40 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
   public void setReadToTime(@NonNull String readToTime) {
     this.readToTime = readToTime;
   }
-  //  @Bean
-//  public NucleoDB createNucleoDB(ApplicationContext ctx) throws IncorrectDataEntryClassException, MissingDataEntryConstructorsException {
-//
-//    return
-//
-//  }
+
+  public void setPublisher(ApplicationEventPublisher publisher) {
+    this.publisher = publisher;
+  }
+  ConnectionEventListener connectionEventListener(){
+    return new ConnectionEventListener<Connection>(){
+      @Override
+      public void update(ConnectionUpdate update, Connection entry) {
+        publisher.publishEvent(new ConnectionUpdatedEvent(entry));
+      }
+      @Override
+      public void delete(ConnectionDelete delete, Connection entry) {
+        publisher.publishEvent(new ConnectionDeletedEvent(entry));
+      }
+      @Override
+      public void create(ConnectionCreate create, Connection entry) {
+        publisher.publishEvent(new ConnectionCreatedEvent(entry));
+      }
+    };
+  }
+  DataTableEventListener dataTableEventListener(){
+    return new DataTableEventListener<DataEntry>(){
+      @Override
+      public void update(Update update, DataEntry entry) {
+        publisher.publishEvent(new DataEntryUpdatedEvent(entry));
+      }
+      @Override
+      public void delete(Delete delete, DataEntry entry) {
+        publisher.publishEvent(new DataEntryDeletedEvent(entry));
+      }
+      @Override
+      public void create(Create create, DataEntry entry) {
+        publisher.publishEvent(new DataEntryCreatedEvent(entry));
+      }
+    };
+  }
 }

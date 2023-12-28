@@ -9,6 +9,7 @@ import com.nucleodb.library.database.utils.InvalidConnectionException;
 import com.nucleodb.library.database.utils.Pagination;
 import com.nucleodb.library.database.utils.TreeSetExt;
 import com.nucleodb.spring.types.NDBConnRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.Nullable;
 
 import java.io.IOException;
@@ -25,10 +26,12 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
   private @Nullable ConnectionHandler connectionHandler = null;
   private final NucleoDB nucleoDB;
   private final Class<C> classType;
-  public NDBConnectionRepositoryImpl(NucleoDB nucleoDB, Class<C> classType) {
+  private final ApplicationEventPublisher publisher;
+  public NDBConnectionRepositoryImpl(NucleoDB nucleoDB, Class<C> classType, ApplicationEventPublisher publisher) {
     this.nucleoDB = nucleoDB;
     this.classType = classType;
     this.connectionHandler = nucleoDB.getConnectionHandler(classType);
+    this.publisher = publisher;
   }
 
   @Override

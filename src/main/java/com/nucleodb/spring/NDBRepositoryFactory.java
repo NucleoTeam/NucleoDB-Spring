@@ -10,6 +10,7 @@ import com.nucleodb.spring.query.QueryParser;
 import com.nucleodb.spring.query.exec.NDBDataEntryRepositoryQuery;
 import com.nucleodb.spring.types.NDBConnRepository;
 import com.nucleodb.spring.types.NDBDataRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.repository.core.EntityInformation;
 import org.springframework.data.repository.core.NamedQueries;
@@ -36,16 +37,20 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
 
   private final NucleoDB nucleoDB;
 
+  private final ApplicationEventPublisher publisher;
+
   /**
    * Create a new {@link NDBRepositoryFactory} with the given {@link NucleoDB}.
    *
    * @param nucleoDB must not be {@literal null}
    */
-  public NDBRepositoryFactory(NucleoDB nucleoDB) {
+  public NDBRepositoryFactory(NucleoDB nucleoDB, ApplicationEventPublisher publisher) {
 
     Assert.notNull(nucleoDB, "NucleoDB must not be null");
 
     this.nucleoDB = nucleoDB;
+    this.publisher = publisher;
+
   }
 
   @Override
@@ -56,7 +61,7 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
 
   @Override
   protected Object getTargetRepository(RepositoryInformation metadata) {
-    return getTargetRepositoryViaReflection(metadata, nucleoDB, metadata.getDomainType());
+    return getTargetRepositoryViaReflection(metadata, nucleoDB, metadata.getDomainType(), publisher);
   }
 
   @Override

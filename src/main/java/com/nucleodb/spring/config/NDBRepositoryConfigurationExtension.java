@@ -42,6 +42,7 @@ public class NDBRepositoryConfigurationExtension extends RepositoryConfiguration
 
   @Override
   public void postProcess(BeanDefinitionBuilder builder, AnnotationRepositoryConfigurationSource config) {
+    builder.addAutowiredProperty("publisher");
     Optional<String> mqsConfig = config.getAttribute("mqsConfiguration");
     if(mqsConfig.isPresent()){
       builder.addPropertyValue("mqsConfiguration", mqsConfig.get());

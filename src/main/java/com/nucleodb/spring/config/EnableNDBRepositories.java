@@ -23,7 +23,7 @@ import org.springframework.data.repository.query.QueryLookupStrategy.Key;
 @Inherited
 @Import(NDBRepositoryRegistrar.class)
 public @interface EnableNDBRepositories{
-  NucleoDB.DBType dbType() default NucleoDB.DBType.ALL;
+  NucleoDB.DBType dbType() default NucleoDB.DBType.NO_LOCAL;
 
   String mqsConfiguration() default "com.nucleodb.library.mqs.kafka.KafkaConfiguration";
 

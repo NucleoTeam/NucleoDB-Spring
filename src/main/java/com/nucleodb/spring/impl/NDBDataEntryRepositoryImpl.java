@@ -7,6 +7,7 @@ import com.nucleodb.library.database.tables.table.DataTable;
 import com.nucleodb.library.database.utils.Pagination;
 import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryObjectException;
 import com.nucleodb.spring.types.NDBDataRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 
@@ -22,9 +23,11 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID extends String> 
   private final NucleoDB nucleoDB;
   private final Class<T> classType;
   private @Nullable Class<?> tableClass = null;
-  public NDBDataEntryRepositoryImpl(NucleoDB nucleoDB, Class<T> classType) {
+  private final ApplicationEventPublisher publisher;
+  public NDBDataEntryRepositoryImpl(NucleoDB nucleoDB, Class<T> classType, ApplicationEventPublisher publisher) {
     this.nucleoDB = nucleoDB;
     this.classType = classType;
+    this.publisher = publisher;
     Type[] actualTypeArguments = ((ParameterizedType) classType.getGenericSuperclass()).getActualTypeArguments();
     if(actualTypeArguments.length==1) {
       this.tableClass = (Class<?>) actualTypeArguments[0];
