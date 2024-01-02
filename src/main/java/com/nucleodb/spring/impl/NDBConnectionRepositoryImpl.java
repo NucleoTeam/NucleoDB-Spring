@@ -127,6 +127,32 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
   }
 
   @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity) {
+    return getByFromAndTo(fromEntity, toEntity, null, null);
+  }
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination) {
+    return getByFromAndTo(fromEntity, toEntity, pagination, null);
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, Predicate<C> filter) {
+    return getByFromAndTo(fromEntity, toEntity, null, filter);
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination, Predicate<C> filter) {
+    ConnectionProjection connectionProjection = new ConnectionProjection();
+    if(pagination!=null){
+      connectionProjection.setPagination(pagination);
+    }
+    if(filter!=null){
+      connectionProjection.setFilter((Predicate) filter);
+    }
+    return connectionHandler.getByFromAndTo(fromEntity, toEntity, connectionProjection).stream().map(c->(C)c).collect(Collectors.toSet());
+  }
+
+  @Override
   public <S extends C> S save(S entity) {
     AtomicReference<S> returnedVal = new AtomicReference<>();
     try {
