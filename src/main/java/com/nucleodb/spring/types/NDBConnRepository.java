@@ -36,4 +36,5 @@ public interface NDBConnRepository<C extends Connection<T, F>, ID extends String
   Set<C> getByFromAndTo(F fromEntity, T toEntity, Predicate<C> filter);
   Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination, Predicate<C> filter);
 
+  C getById(String uuid);
 }

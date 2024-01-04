@@ -263,4 +263,9 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
   public void deleteAll() {
     // not implemented unsafe!
   }
+
+  @Override
+  public C getById(String uuid) {
+    return (C) connectionHandler.getConnectionByUUID().get(uuid);
+  }
 }
