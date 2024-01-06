@@ -12,7 +12,7 @@ dependencyManagement {
     }
 }
 group = 'com.nucleodb'
-version = '3.3.24'
+version = '3.3.25'
 
 repositories {
     mavenCentral()
@@ -22,7 +22,7 @@ repositories {
 }
 
 dependencies {
-    api 'com.nucleodb:library:1.14.4'
+    api 'com.nucleodb:library:1.14.5'
     api 'org.springframework:spring-beans'
     api 'org.springframework:spring-context'
     api 'org.springframework:spring-expression'
