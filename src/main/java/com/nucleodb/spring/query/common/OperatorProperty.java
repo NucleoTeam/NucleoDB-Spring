@@ -12,7 +12,6 @@ import static com.nucleodb.spring.query.ParserConstants.propertyNotRegexPattern;
 public class OperatorProperty implements Serializable {
     String expression = "=";
     String propertyName;
-
     boolean not;
 
     public OperatorProperty(String propertyName) {

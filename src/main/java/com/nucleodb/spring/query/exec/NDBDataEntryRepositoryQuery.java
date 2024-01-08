@@ -116,7 +116,8 @@ public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
     if(query.getMethod().equals("findBy")){
       Stream<DataEntry> dataEntryStream = entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass()));
       if(Collection.class.isAssignableFrom(method.getReturnType())) {
-        Type[] actualTypeArguments = ((ParameterizedType) method.getReturnType().getGenericSuperclass()).getActualTypeArguments();
+        method.getReturnType();
+        Type[] actualTypeArguments = ((ParameterizedType) method.getGenericReturnType()).getActualTypeArguments();
         Class<?> returnClass = DataEntry.class;
         if (actualTypeArguments.length == 1) {
           returnClass = (Class<?>) actualTypeArguments[0];
