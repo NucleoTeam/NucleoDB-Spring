@@ -23,8 +23,10 @@ import org.springframework.data.repository.query.RepositoryQuery;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -53,8 +55,13 @@ public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
     Operation tmp = query;
     String currentConditional = null;
     Set<DataEntry> entries = null;
+    Optional<Object> first = Arrays.stream(parameters).filter(o -> o instanceof DataEntryProjection).findFirst();
     DataEntryProjection dataEntryProjection = new DataEntryProjection(new Pagination(0, Integer.MAX_VALUE));
     dataEntryProjection.setWritable(false);
+    if(first.isPresent()){
+      dataEntryProjection = (DataEntryProjection) first.get();
+    }
+
     int i = 0;
     while ((tmp = tmp.getNext()) != null) {
       if (tmp instanceof ConditionOperation) {
