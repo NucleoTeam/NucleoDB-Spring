@@ -9,6 +9,7 @@ import com.nucleodb.library.database.utils.InvalidConnectionException;
 import com.nucleodb.library.database.utils.Pagination;
 import com.nucleodb.library.database.utils.TreeSetExt;
 import com.nucleodb.spring.types.NDBConnRepository;
+import lombok.AllArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.Nullable;
 
@@ -58,7 +59,7 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
     if(filter!=null){
       connectionProjection.setFilter((Predicate) filter);
     }
-    return connectionHandler.getReverseByTo(entity, connectionProjection).stream().map(c->(C)c).collect(Collectors.toSet());
+    return getByTo(entity, connectionProjection);
   }
 
   @Override
@@ -104,7 +105,7 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
     if(filter!=null){
       connectionProjection.setFilter((Predicate) filter);
     }
-    return connectionHandler.getByFrom(entity, connectionProjection).stream().map(c->(C)c).collect(Collectors.toSet());
+    return getByFrom(entity, connectionProjection);
   }
 
   @Override
@@ -149,7 +150,7 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
     if(filter!=null){
       connectionProjection.setFilter((Predicate) filter);
     }
-    return connectionHandler.getByFromAndTo(fromEntity, toEntity, connectionProjection).stream().map(c->(C)c).collect(Collectors.toSet());
+    return getByFromAndTo(fromEntity, toEntity, connectionProjection);
   }
 
   @Override
@@ -267,5 +268,30 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
   @Override
   public C getById(String uuid) {
     return (C) connectionHandler.getConnectionByUUID().get(uuid);
+  }
+
+  @Override
+  public Set<C> getByTo(T entity, ConnectionProjection projection) {
+    return connectionHandler.getReverseByTo(entity, projection).stream().map(c->(C)c).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<F> getFromByTo(T entity, ConnectionProjection projection) {
+    return getByTo(entity, projection).stream().map(c->c.fromEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> getByFrom(F entity, ConnectionProjection projection) {
+    return connectionHandler.getByFrom(entity, projection).stream().map(c->(C)c).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<T> getToByFrom(F entity, ConnectionProjection projection) {
+    return getByFrom(entity, projection).stream().map(c->c.toEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, ConnectionProjection projection) {
+    return connectionHandler.getByFromAndTo(fromEntity, toEntity, projection).stream().map(c->(C)c).collect(Collectors.toSet());
   }
 }
