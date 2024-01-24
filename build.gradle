@@ -13,7 +13,7 @@ dependencyManagement {
     }
 }
 group = 'com.nucleodb'
-version = '3.3.43'
+version = '3.3.44'
 
 repositories {
     mavenCentral()
