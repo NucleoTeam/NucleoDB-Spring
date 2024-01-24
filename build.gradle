@@ -23,7 +23,7 @@ repositories {
 }
 
 dependencies {
-    api 'com.nucleodb:library:1.15.5'
+    api 'com.nucleodb:library:1.15.6'
     api 'org.springframework:spring-beans'
     api 'org.springframework:spring-context'
     api 'org.springframework:spring-expression'
