@@ -74,6 +74,9 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
                 c.getDataTableConfig().setEventListener(dataTableEventListener);
               },
+              c -> {
+                c.setMqsConfiguration(mqsConfigurationInstance);
+              },
               scanPackages
           );
         }else{
@@ -86,6 +89,9 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
               c -> {
                 c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
                 c.getDataTableConfig().setEventListener(dataTableEventListener);
+              },
+              c -> {
+                c.setMqsConfiguration(mqsConfigurationInstance);
               },
               scanPackages
           );

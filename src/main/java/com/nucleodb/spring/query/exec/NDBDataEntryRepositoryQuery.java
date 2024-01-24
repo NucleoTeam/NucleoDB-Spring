@@ -121,7 +121,7 @@ public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
       }
     }
     if(query.getMethod().equals("findBy")){
-      Stream<DataEntry> dataEntryStream = entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass()));
+      Stream<DataEntry> dataEntryStream = entries.stream();
       if(Collection.class.isAssignableFrom(method.getReturnType())) {
         method.getReturnType();
         Type[] actualTypeArguments = ((ParameterizedType) method.getGenericReturnType()).getActualTypeArguments();
@@ -163,10 +163,10 @@ public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
         }
       }
     }else if(query.getMethod().equals("streamBy")){
-      return entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass()));
+      return entries.stream();
     }else if(query.getMethod().equals("deleteBy")){
       CountDownLatch countDownLatch = new CountDownLatch(entries.size());
-      entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass())).forEach(e->{
+      entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass(), true)).forEach(e->{
         table.deleteAsync(e, (dataEntry)->{
           countDownLatch.countDown();
         });
