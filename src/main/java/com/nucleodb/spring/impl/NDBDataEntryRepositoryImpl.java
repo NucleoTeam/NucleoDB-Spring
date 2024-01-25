@@ -16,6 +16,7 @@ import java.lang.reflect.Type;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID extends String> implements NDBDataRepository<T, ID>{
@@ -32,8 +33,11 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID extends String> 
     if(actualTypeArguments.length==1) {
       this.tableClass = (Class<?>) actualTypeArguments[0];
       this.table = nucleoDB.getTable(this.tableClass);
+
     }
   }
+
+
 
   @Override
   public <S extends T> S save(S entity) {
@@ -69,17 +73,25 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID extends String> 
 
   @Override
   public Optional<T> findById(ID id) {
-    return (Optional<T>) table.get("id", id, new DataEntryProjection(new Pagination(0, 1))).stream().findFirst();
+    Set<DataEntry> dataEntrySet = table.get("id", id);
+    if(dataEntrySet!=null && dataEntrySet.size()>0){
+      return (Optional<T>) Optional.of(dataEntrySet.iterator().next());
+    }
+    return Optional.empty();
   }
 
   @Override
   public boolean existsById(ID id) {
-    return table.get("id", id, new DataEntryProjection(new Pagination(0, 1))).stream().findFirst().isPresent();
+    Set<DataEntry> dataEntrySet = table.get("id", id);
+    if(dataEntrySet!=null && dataEntrySet.size()>0){
+      return true;
+    }
+    return false;
   }
 
   @Override
   public List<T> findAll() {
-    return (List<T>) table.getEntries().stream().toList();
+    return (List<T>) new LinkedList<>(table.getEntries());
   }
 
   @Override
