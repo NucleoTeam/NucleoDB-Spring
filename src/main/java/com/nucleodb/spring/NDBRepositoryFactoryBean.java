@@ -7,7 +7,6 @@ import com.nucleodb.library.database.modifications.ConnectionUpdate;
 import com.nucleodb.library.database.modifications.Create;
 import com.nucleodb.library.database.modifications.Delete;
 import com.nucleodb.library.database.modifications.Update;
-import com.nucleodb.library.database.tables.annotation.Conn;
 import com.nucleodb.library.database.tables.connection.Connection;
 import com.nucleodb.library.database.tables.table.DataEntry;
 import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryClassException;
@@ -31,6 +30,8 @@ import org.springframework.util.Assert;
 
 import java.beans.IntrospectionException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Path;
+import java.util.Map;
 
 
 public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
@@ -54,12 +55,19 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
   protected NDBRepositoryFactoryBean(Class<? extends T> repositoryInterface) throws IncorrectDataEntryClassException, MissingDataEntryConstructorsException {
     super(repositoryInterface);
   }
+
+  static Map<String, String> getenv = System.getenv();
+
   @Override
   protected RepositoryFactorySupport createRepositoryFactory() {
     if(nucleoDB==null) {
       try {
         MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
 
+        boolean jsonExport = Boolean.valueOf(getenv.getOrDefault("NDB_TOPIC_EXPORT","false"));
+        boolean storeState = Boolean.valueOf(getenv.getOrDefault("NDB_STORE_STATE","false"));
+        boolean loadState = Boolean.valueOf(getenv.getOrDefault("NDB_LOAD_STATE","false"));
+        String saveDirectory = Path.of(getenv.getOrDefault("NDB_SAVE_DIR","/data")).toAbsolutePath().toString();
         ConnectionEventListener connectionEventListener = connectionEventListener();
         DataTableEventListener dataTableEventListener = dataTableEventListener();
         if(readToTime!=null && !readToTime.isEmpty()) {
@@ -69,10 +77,26 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
               c -> {
                 c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance);
                 c.getConnectionConfig().setEventListener(connectionEventListener);
+                c.getConnectionConfig().setJsonExport(jsonExport);
+                c.getConnectionConfig().setSaveChanges(storeState);
+                c.getConnectionConfig().setLoadSaved(loadState);
+                c.getConnectionConfig().setConnectionFileName(
+                        Path.of(saveDirectory, "connection_"+c.getConnectionConfig().getLabel()+".txt")
+                                .toAbsolutePath()
+                                .toString()
+                );
               },
               c -> {
                 c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
                 c.getDataTableConfig().setEventListener(dataTableEventListener);
+                c.getDataTableConfig().setJsonExport(jsonExport);
+                c.getDataTableConfig().setSaveChanges(storeState);
+                c.getDataTableConfig().setLoadSave(loadState);
+                c.getDataTableConfig().setTableFileName(
+                        Path.of(saveDirectory, "de_"+c.getDataTableConfig().getTable()+".dat")
+                                .toAbsolutePath()
+                                .toString()
+                );
               },
               c -> {
                 c.setMqsConfiguration(mqsConfigurationInstance);
@@ -85,10 +109,26 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
               c -> {
                 c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance);
                 c.getConnectionConfig().setEventListener(connectionEventListener);
+                c.getConnectionConfig().setJsonExport(jsonExport);
+                c.getConnectionConfig().setSaveChanges(storeState);
+                c.getConnectionConfig().setLoadSaved(loadState);
+                c.getConnectionConfig().setConnectionFileName(
+                        Path.of(saveDirectory, "connection_"+c.getConnectionConfig().getLabel()+".txt")
+                                .toAbsolutePath()
+                                .toString()
+                );
               },
               c -> {
                 c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
                 c.getDataTableConfig().setEventListener(dataTableEventListener);
+                c.getDataTableConfig().setJsonExport(jsonExport);
+                c.getDataTableConfig().setSaveChanges(storeState);
+                c.getDataTableConfig().setLoadSave(loadState);
+                c.getDataTableConfig().setTableFileName(
+                        Path.of(saveDirectory, "de_"+c.getDataTableConfig().getTable()+".dat")
+                                .toAbsolutePath()
+                                .toString()
+                );
               },
               c -> {
                 c.setMqsConfiguration(mqsConfigurationInstance);
