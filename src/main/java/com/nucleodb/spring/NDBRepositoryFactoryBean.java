@@ -81,7 +81,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getConnectionConfig().setSaveChanges(storeState);
                 c.getConnectionConfig().setLoadSaved(loadState);
                 c.getConnectionConfig().setConnectionFileName(
-                        Path.of(saveDirectory, "connection_"+c.getConnectionConfig().getLabel()+".txt")
+                        Path.of(saveDirectory, "conn_"+c.getConnectionConfig().getLabel()+".dat")
                                 .toAbsolutePath()
                                 .toString()
                 );
@@ -113,7 +113,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getConnectionConfig().setSaveChanges(storeState);
                 c.getConnectionConfig().setLoadSaved(loadState);
                 c.getConnectionConfig().setConnectionFileName(
-                        Path.of(saveDirectory, "connection_"+c.getConnectionConfig().getLabel()+".txt")
+                        Path.of(saveDirectory, "conn_"+c.getConnectionConfig().getLabel()+".dat")
                                 .toAbsolutePath()
                                 .toString()
                 );
