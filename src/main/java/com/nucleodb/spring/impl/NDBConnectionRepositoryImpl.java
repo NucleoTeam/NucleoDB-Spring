@@ -23,7 +23,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends String, T extends DataEntry, F extends DataEntry> implements NDBConnRepository<C, ID, F, T>{
+public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends String, F extends DataEntry, T extends DataEntry> implements NDBConnRepository<C, ID, F, T>{
   private @Nullable ConnectionHandler connectionHandler = null;
   private final NucleoDB nucleoDB;
   private final Class<C> classType;
