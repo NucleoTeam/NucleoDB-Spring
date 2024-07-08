@@ -23,7 +23,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends String, T extends DataEntry, F extends DataEntry> implements NDBConnRepository<C, ID, T, F>{
+public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends String, T extends DataEntry, F extends DataEntry> implements NDBConnRepository<C, ID, F, T>{
   private @Nullable ConnectionHandler connectionHandler = null;
   private final NucleoDB nucleoDB;
   private final Class<C> classType;
@@ -238,7 +238,7 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
   @Override
   public void delete(C entity) {
     try {
-      connectionHandler.deleteSync(entity);
+      connectionHandler.deleteSync(entity.copy(classType, true));
     } catch (IOException e) {
       throw new RuntimeException(e);
     } catch (InterruptedException e) {
@@ -272,7 +272,7 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
 
   @Override
   public Set<C> getByTo(T entity, ConnectionProjection projection) {
-    return connectionHandler.getReverseByTo(entity, projection).stream().map(c->(C)c).collect(Collectors.toSet());
+    return connectionHandler.getReverseByTo(entity, projection);
   }
 
   @Override
@@ -282,7 +282,7 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
 
   @Override
   public Set<C> getByFrom(F entity, ConnectionProjection projection) {
-    return connectionHandler.getByFrom(entity, projection).stream().map(c->(C)c).collect(Collectors.toSet());
+    return connectionHandler.getByFrom(entity, projection);
   }
 
   @Override
@@ -292,6 +292,6 @@ public class NDBConnectionRepositoryImpl<C extends Connection<T, F>, ID extends 
 
   @Override
   public Set<C> getByFromAndTo(F fromEntity, T toEntity, ConnectionProjection projection) {
-    return connectionHandler.getByFromAndTo(fromEntity, toEntity, projection).stream().map(c->(C)c).collect(Collectors.toSet());
+    return connectionHandler.getByFromAndTo(fromEntity, toEntity, projection);
   }
 }

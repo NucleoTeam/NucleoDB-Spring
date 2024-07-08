@@ -11,7 +11,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-public interface NDBConnRepository<C extends Connection<T, F>, ID extends String, T extends DataEntry, F extends DataEntry> extends CrudRepository<C, ID>{
+public interface NDBConnRepository<C extends Connection<F, T>, ID extends String, F extends DataEntry, T extends DataEntry> extends CrudRepository<C, ID>{
   @Override
   <S extends C> S save(S entity);
 

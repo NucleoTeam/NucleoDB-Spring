@@ -11,6 +11,7 @@ import com.nucleodb.library.database.tables.table.DataTable;
 import com.nucleodb.library.database.utils.Pagination;
 import com.nucleodb.library.database.utils.Serializer;
 import com.nucleodb.library.database.utils.exceptions.InvalidIndexTypeException;
+import com.nucleodb.library.database.utils.exceptions.ObjectNotSavedException;
 import com.nucleodb.spring.query.QueryParser;
 import com.nucleodb.spring.query.common.ConditionOperation;
 import com.nucleodb.spring.query.common.LookupOperation;
@@ -166,7 +167,13 @@ public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
       return entries.stream();
     }else if(query.getMethod().equals("deleteBy")){
       CountDownLatch countDownLatch = new CountDownLatch(entries.size());
-      entries.stream().map(de -> (DataEntry) de.copy(table.getConfig().getDataEntryClass(), true)).forEach(e->{
+      entries.stream().map(de -> {
+          try {
+              return de.copy(table.getConfig().getDataEntryClass(), true);
+          } catch (ObjectNotSavedException e) {
+              throw new RuntimeException(e);
+          }
+      }).forEach(e->{
         table.deleteAsync(e, (dataEntry)->{
           countDownLatch.countDown();
         });
