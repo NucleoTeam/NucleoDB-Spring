@@ -8,6 +8,7 @@ import com.nucleodb.library.database.modifications.Create;
 import com.nucleodb.library.database.modifications.Delete;
 import com.nucleodb.library.database.modifications.Update;
 import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.connection.NodeFilter;
 import com.nucleodb.library.database.tables.table.DataEntry;
 import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryClassException;
 import com.nucleodb.library.database.utils.exceptions.MissingDataEntryConstructorsException;
@@ -39,6 +40,8 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 
   private @NonNull String[] scanPackages;
   private @NonNull String mqsConfiguration;
+  private @NonNull String nodeFilterConnection;
+  private @NonNull String nodeFilterDataEntry;
   private @NonNull String readToTime;
   private @NonNull NucleoDB.DBType dbType;
 
@@ -64,6 +67,9 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
       try {
         MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
 
+        NodeFilter connectionNodeFilter = (NodeFilter) Class.forName(nodeFilterConnection).getDeclaredConstructor().newInstance();
+        com.nucleodb.library.database.tables.table.NodeFilter dataEntryNodeFilter = (com.nucleodb.library.database.tables.table.NodeFilter) Class.forName(nodeFilterDataEntry).getDeclaredConstructor().newInstance();
+
         boolean jsonExport = Boolean.valueOf(getenv.getOrDefault("NDB_TOPIC_EXPORT","false"));
         boolean storeState = Boolean.valueOf(getenv.getOrDefault("NDB_STORE_STATE","false"));
         boolean loadState = Boolean.valueOf(getenv.getOrDefault("NDB_LOAD_STATE","false"));
@@ -80,6 +86,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getConnectionConfig().setJsonExport(jsonExport);
                 c.getConnectionConfig().setSaveChanges(storeState);
                 c.getConnectionConfig().setLoadSaved(loadState);
+                c.getConnectionConfig().setNodeFilter(connectionNodeFilter);
                 c.getConnectionConfig().setConnectionFileName(
                         Path.of(saveDirectory, "conn_"+c.getConnectionConfig().getLabel()+".dat")
                                 .toAbsolutePath()
@@ -92,6 +99,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getDataTableConfig().setJsonExport(jsonExport);
                 c.getDataTableConfig().setSaveChanges(storeState);
                 c.getDataTableConfig().setLoadSave(loadState);
+                c.getDataTableConfig().setNodeFilter(dataEntryNodeFilter);
                 c.getDataTableConfig().setTableFileName(
                         Path.of(saveDirectory, "de_"+c.getDataTableConfig().getTable()+".dat")
                                 .toAbsolutePath()
@@ -111,6 +119,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getConnectionConfig().setEventListener(connectionEventListener);
                 c.getConnectionConfig().setJsonExport(jsonExport);
                 c.getConnectionConfig().setSaveChanges(storeState);
+                c.getConnectionConfig().setNodeFilter(connectionNodeFilter);
                 c.getConnectionConfig().setLoadSaved(loadState);
                 c.getConnectionConfig().setConnectionFileName(
                         Path.of(saveDirectory, "conn_"+c.getConnectionConfig().getLabel()+".dat")
@@ -123,6 +132,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
                 c.getDataTableConfig().setEventListener(dataTableEventListener);
                 c.getDataTableConfig().setJsonExport(jsonExport);
                 c.getDataTableConfig().setSaveChanges(storeState);
+                c.getDataTableConfig().setNodeFilter(dataEntryNodeFilter);
                 c.getDataTableConfig().setLoadSave(loadState);
                 c.getDataTableConfig().setTableFileName(
                         Path.of(saveDirectory, "de_"+c.getDataTableConfig().getTable()+".dat")
