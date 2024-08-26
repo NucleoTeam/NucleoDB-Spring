@@ -196,6 +196,15 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
     this.readToTime = readToTime;
   }
 
+
+  public void setNodeFilterDataEntry(@NonNull String nodeFilterDataEntry) {
+    this.nodeFilterDataEntry = nodeFilterDataEntry;
+  }
+
+  public void setNodeFilterConnection(@NonNull String nodeFilterConnection) {
+    this.nodeFilterConnection = nodeFilterConnection;
+  }
+
   public void setPublisher(ApplicationEventPublisher publisher) {
     this.publisher = publisher;
   }

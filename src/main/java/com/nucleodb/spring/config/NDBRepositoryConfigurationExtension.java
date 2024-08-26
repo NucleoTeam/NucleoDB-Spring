@@ -51,6 +51,14 @@ public class NDBRepositoryConfigurationExtension extends RepositoryConfiguration
     if(readToTime.isPresent()){
       builder.addPropertyValue("readToTime", readToTime.get());
     }
+    Optional<String> nodeFilterConnection = config.getAttribute("nodeFilterConnection");
+    if(nodeFilterConnection.isPresent()){
+      builder.addPropertyValue("nodeFilterConnection", nodeFilterConnection.get());
+    }
+    Optional<String> nodeFilterDataEntry = config.getAttribute("nodeFilterDataEntry");
+    if(nodeFilterDataEntry.isPresent()){
+      builder.addPropertyValue("nodeFilterDataEntry", nodeFilterDataEntry.get());
+    }
     Optional<NucleoDB.DBType> dbType = config.getAttribute("dbType", NucleoDB.DBType.class);
     if(dbType.isPresent()){
       builder.addPropertyValue("dbType", dbType.get());
