@@ -3,14 +3,18 @@ package com.nucleodb.spring;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.tables.table.DataEntry;
 import com.nucleodb.library.database.utils.Serializer;
 import com.nucleodb.spring.impl.NDBConnectionRepositoryImpl;
 import com.nucleodb.spring.impl.NDBDataEntryRepositoryImpl;
+import com.nucleodb.spring.mapping.NDBEntityInformation;
+import com.nucleodb.spring.query.MappingNDBEntityInformation;
 import com.nucleodb.spring.query.QueryParser;
 import com.nucleodb.spring.query.exec.NDBDataEntryRepositoryQuery;
 import com.nucleodb.spring.types.NDBConnRepository;
 import com.nucleodb.spring.types.NDBDataRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.repository.core.EntityInformation;
 import org.springframework.data.repository.core.NamedQueries;
@@ -54,9 +58,8 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
   }
 
   @Override
-  public <T, ID> EntityInformation<T, ID> getEntityInformation(Class<T> domainClass) {
-    //return new MappingNDBEntityInformation();
-    return null;
+  public <T, ID> EntityInformation<T, ID> getEntityInformation(Class<T> entityClass) {
+    return new NDBEntityInformation<>(entityClass, (Class<ID>) String.class);
   }
 
   @Override
