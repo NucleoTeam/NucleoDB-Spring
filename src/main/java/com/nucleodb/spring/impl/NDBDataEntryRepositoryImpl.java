@@ -2,15 +2,12 @@ package com.nucleodb.spring.impl;
 
 import com.nucleodb.library.NucleoDB;
 import com.nucleodb.library.database.tables.table.DataEntry;
-import com.nucleodb.library.database.tables.table.DataEntryProjection;
 import com.nucleodb.library.database.tables.table.DataTable;
-import com.nucleodb.library.database.utils.Pagination;
 import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryObjectException;
 import com.nucleodb.spring.types.NDBDataRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
-
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.LinkedList;
@@ -19,25 +16,24 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID extends String> implements NDBDataRepository<T, ID>{
+public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBDataRepository<T, ID>{
   private @Nullable DataTable table = null;
   private final NucleoDB nucleoDB;
   private final Class<T> classType;
   private @Nullable Class<?> tableClass = null;
   private final ApplicationEventPublisher publisher;
+
   public NDBDataEntryRepositoryImpl(NucleoDB nucleoDB, Class<T> classType, ApplicationEventPublisher publisher) {
     this.nucleoDB = nucleoDB;
     this.classType = classType;
     this.publisher = publisher;
     Type[] actualTypeArguments = ((ParameterizedType) classType.getGenericSuperclass()).getActualTypeArguments();
-    if(actualTypeArguments.length==1) {
+    if (actualTypeArguments.length == 1) {
       this.tableClass = (Class<?>) actualTypeArguments[0];
       this.table = nucleoDB.getTable(this.tableClass);
 
     }
   }
-
-
 
   @Override
   public <S extends T> S save(S entity) {

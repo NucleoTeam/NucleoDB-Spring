@@ -1,17 +1,16 @@
 package com.nucleodb.spring.mapping;
 
+import com.nucleodb.library.database.tables.connection.Connection;
 import org.springframework.data.repository.core.EntityInformation;
 
 import java.lang.reflect.Field;
 
-public class NDBEntityInformation<T, ID> implements EntityInformation<T, ID> {
-    
+public class NDBEntityInformationConnection<T extends Connection> implements EntityInformation<T, String> {
+
     private final Class<T> entityClass;
-    private final Class<ID> idClass;
-    
-    public NDBEntityInformation(Class<T> entityClass, Class<ID> idClass) {
+
+    public NDBEntityInformationConnection(Class<T> entityClass) {
         this.entityClass = entityClass;
-        this.idClass = idClass;
     }
 
     @Override
@@ -21,22 +20,19 @@ public class NDBEntityInformation<T, ID> implements EntityInformation<T, ID> {
     }
 
     @Override
-    public ID getId(T entity) {
+    public String getId(T entity) {
         try {
-            Field idField = entityClass.getDeclaredField("key");
-            if(idField == null) {
-                idField = entityClass.getDeclaredField("uuid");
-            }
+            Field idField = entityClass.getDeclaredField("uuid");
             idField.setAccessible(true);
-            return (ID) idField.get(entity);
+            return (String) idField.get(entity);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new IllegalStateException("Could not retrieve id field", e);
         }
     }
 
     @Override
-    public Class<ID> getIdType() {
-        return idClass;
+    public Class<String> getIdType() {
+        return String.class;
     }
     
     @Override

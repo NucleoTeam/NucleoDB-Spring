@@ -35,8 +35,8 @@ import java.nio.file.Path;
 import java.util.Map;
 
 
-public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
-    extends RepositoryFactoryBeanSupport<T, S, ID>{
+public class NDBRepositoryFactoryBean<T, ID, R extends Repository<T, ID>>
+    extends RepositoryFactoryBeanSupport<R, T, ID>{
 
   private @NonNull String[] scanPackages;
   private @NonNull String mqsConfiguration;
@@ -47,7 +47,6 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 
   private ApplicationEventPublisher publisher;
 
-
   private static @Nullable NucleoDB nucleoDB = null;
 
   /**
@@ -55,7 +54,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
    *
    * @param repositoryInterface must not be {@literal null}.
    */
-  protected NDBRepositoryFactoryBean(Class<? extends T> repositoryInterface) throws IncorrectDataEntryClassException, MissingDataEntryConstructorsException {
+  protected NDBRepositoryFactoryBean(Class<? extends R> repositoryInterface) throws IncorrectDataEntryClassException, MissingDataEntryConstructorsException {
     super(repositoryInterface);
   }
 

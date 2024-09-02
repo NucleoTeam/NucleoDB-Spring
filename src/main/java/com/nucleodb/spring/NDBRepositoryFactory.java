@@ -3,11 +3,13 @@ package com.nucleodb.spring;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.tables.connection.Connection;
 import com.nucleodb.library.database.tables.table.DataEntry;
 import com.nucleodb.library.database.utils.Serializer;
 import com.nucleodb.spring.impl.NDBConnectionRepositoryImpl;
 import com.nucleodb.spring.impl.NDBDataEntryRepositoryImpl;
-import com.nucleodb.spring.mapping.NDBEntityInformation;
+import com.nucleodb.spring.mapping.NDBEntityInformationConnection;
+import com.nucleodb.spring.mapping.NDBEntityInformationDataEntry;
 import com.nucleodb.spring.query.MappingNDBEntityInformation;
 import com.nucleodb.spring.query.QueryParser;
 import com.nucleodb.spring.query.exec.NDBDataEntryRepositoryQuery;
@@ -51,25 +53,25 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
   public NDBRepositoryFactory(NucleoDB nucleoDB, ApplicationEventPublisher publisher) {
 
     Assert.notNull(nucleoDB, "NucleoDB must not be null");
-
     this.nucleoDB = nucleoDB;
     this.publisher = publisher;
 
   }
 
   @Override
-  public <T, ID> EntityInformation<T, ID> getEntityInformation(Class<T> entityClass) {
-    try {
-      return (EntityInformation<T, ID>) new NDBEntityInformation<>(entityClass, String.class);
-    }catch (Exception e){
-      e.printStackTrace();
+  public <T, ID> EntityInformation<T, ID> getEntityInformation(Class<T> domainClass) {
+    System.out.println(domainClass.getName());
+    if(domainClass.isAssignableFrom(DataEntry.class)){
+      return new NDBEntityInformationDataEntry(domainClass);
+    }else if(domainClass.isAssignableFrom(Connection.class)){
+      return new NDBEntityInformationConnection(domainClass);
     }
     return null;
   }
 
   @Override
-  protected Object getTargetRepository(RepositoryInformation metadata) {
-    return getTargetRepositoryViaReflection(metadata, nucleoDB, metadata.getDomainType(), publisher);
+  protected Object getTargetRepository(RepositoryInformation repositoryInformation) {
+    return getTargetRepositoryViaReflection(repositoryInformation, nucleoDB, repositoryInformation.getDomainType(), publisher);
   }
 
   @Override
