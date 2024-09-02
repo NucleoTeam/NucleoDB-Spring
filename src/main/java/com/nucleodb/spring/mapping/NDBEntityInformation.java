@@ -23,7 +23,7 @@ public class NDBEntityInformation<T, ID> implements EntityInformation<T, ID> {
     @Override
     public ID getId(T entity) {
         try {
-            Field idField = entityClass.getDeclaredField("id");
+            Field idField = entityClass.getDeclaredField("key");
             if(idField == null) {
                 idField = entityClass.getDeclaredField("uuid");
             }
@@ -33,7 +33,6 @@ public class NDBEntityInformation<T, ID> implements EntityInformation<T, ID> {
             throw new IllegalStateException("Could not retrieve id field", e);
         }
     }
-
 
     @Override
     public Class<ID> getIdType() {

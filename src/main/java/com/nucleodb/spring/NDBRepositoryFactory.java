@@ -59,7 +59,12 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
 
   @Override
   public <T, ID> EntityInformation<T, ID> getEntityInformation(Class<T> entityClass) {
-    return new NDBEntityInformation<>(entityClass, (Class<ID>) String.class);
+    try {
+      return (EntityInformation<T, ID>) new NDBEntityInformation<>(entityClass, String.class);
+    }catch (Exception e){
+      e.printStackTrace();
+    }
+    return null;
   }
 
   @Override
