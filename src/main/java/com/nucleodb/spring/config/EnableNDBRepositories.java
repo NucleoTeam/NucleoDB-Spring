@@ -21,7 +21,7 @@ import org.springframework.data.repository.query.QueryLookupStrategy.Key;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Inherited
-@Import(NDBRepositoryRegistrar.class)
+@Import({NDBRepositoryRegistrar.class})
 public @interface EnableNDBRepositories{
   NucleoDB.DBType dbType() default NucleoDB.DBType.NO_LOCAL;
 

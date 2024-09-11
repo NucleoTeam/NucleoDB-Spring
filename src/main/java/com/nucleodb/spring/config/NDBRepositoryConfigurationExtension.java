@@ -5,11 +5,16 @@ import com.nucleodb.library.database.tables.annotation.Conn;
 import com.nucleodb.library.database.tables.annotation.Table;
 import com.nucleodb.library.mqs.config.MQSConfiguration;
 import com.nucleodb.spring.NDBRepositoryFactoryBean;
+import com.nucleodb.spring.mapping.NDBMappingContext;
 import com.nucleodb.spring.types.NDBConnRepository;
 import com.nucleodb.spring.types.NDBDataRepository;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.data.mapping.context.PersistentEntities;
 import org.springframework.data.repository.config.AnnotationRepositoryConfigurationSource;
 import org.springframework.data.repository.config.RepositoryConfigurationExtensionSupport;
+import org.springframework.data.repository.config.RepositoryConfigurationSource;
 import org.springframework.data.repository.config.XmlRepositoryConfigurationSource;
 import org.springframework.data.repository.core.RepositoryMetadata;
 
@@ -36,13 +41,16 @@ public class NDBRepositoryConfigurationExtension extends RepositoryConfiguration
   }
 
   @Override
-  public void postProcess(BeanDefinitionBuilder builder, XmlRepositoryConfigurationSource config) {
-
+  public void registerBeansForRoot(BeanDefinitionRegistry registry, RepositoryConfigurationSource configurationSource) {
+    RootBeanDefinition beanDefinition = new RootBeanDefinition(NDBMappingContext.class);
+    registry.registerBeanDefinition("ndbMappingContext", beanDefinition);
+    super.registerBeansForRoot(registry, configurationSource);
   }
 
   @Override
   public void postProcess(BeanDefinitionBuilder builder, AnnotationRepositoryConfigurationSource config) {
     builder.addAutowiredProperty("publisher");
+    builder.addDependsOn("ndbMappingContext");
     Optional<String> mqsConfig = config.getAttribute("mqsConfiguration");
     if(mqsConfig.isPresent()){
       builder.addPropertyValue("mqsConfiguration", mqsConfig.get());
@@ -78,6 +86,7 @@ public class NDBRepositoryConfigurationExtension extends RepositoryConfiguration
   protected Collection<Class<?>> getIdentifyingTypes() {
     return Arrays.asList(NDBDataRepository.class, NDBConnRepository.class);
   }
+
 
   @Override
   protected boolean useRepositoryConfiguration(RepositoryMetadata metadata) {

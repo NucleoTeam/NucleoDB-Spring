@@ -11,9 +11,11 @@ import com.nucleodb.library.database.utils.TreeSetExt;
 import com.nucleodb.spring.types.NDBConnRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -198,13 +200,17 @@ public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends 
   }
 
   @Override
-  public Optional<C> findById(ID id) {
-    return (Optional) Optional.ofNullable(connectionHandler.getConnectionByUUID().get(id));
+  public C findById(ID uuid) {
+    Object o = connectionHandler.getConnectionByUUID().get(uuid);
+    if(o!=null) {
+      return (C) o;
+    }
+    return null;
   }
 
   @Override
   public boolean existsById(ID id) {
-    return findById(id).isPresent();
+    return findById(id)!=null;
   }
 
   @Override
@@ -217,9 +223,36 @@ public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends 
     return StreamSupport
         .stream(ids.spliterator(), true)
         .map(id->findById(id))
-        .filter(Optional::isPresent)
-        .map(Optional::get)
         .collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> findAll(Sort sort) {
+    return findAll().stream().sorted((o1, o2) -> {
+      for (Sort.Order order : sort) {
+        int comparison = 0;
+        try {
+          java.lang.reflect.Field field = classType.getDeclaredField(order.getProperty());
+          Object o1Object = field.get(o1);
+          Object o2Object = field.get(o2);
+          if (field.getGenericType() == String.class) {
+            comparison = o1Object.toString().compareTo(o2Object.toString());
+          } else if (field.getGenericType() == Integer.class) {
+            comparison = Integer.compare((Integer) o1Object, (Integer) o2Object);
+          } else if (field.getGenericType() == Long.class) {
+            comparison = Long.compare((Long) o1Object, (Long) o2Object);
+          }
+        } catch (NoSuchFieldException e) {
+          throw new RuntimeException(e);
+        } catch (IllegalAccessException e) {
+          throw new RuntimeException(e);
+        }
+        if (comparison != 0) {
+          return order.isAscending() ? comparison : -comparison;
+        }
+      }
+      return 0;
+    }).collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
   @Override
@@ -229,9 +262,9 @@ public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends 
 
   @Override
   public void deleteById(ID id) {
-    Optional<C> byId = findById(id);
-    if(byId.isPresent()){
-      delete(byId.get());
+    C byId = findById(id);
+    if(byId!=null){
+      delete(byId);
     }
   }
 

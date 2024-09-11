@@ -1,5 +1,6 @@
 package com.nucleodb.spring;
 
+import com.google.common.collect.Sets;
 import com.nucleodb.library.NucleoDB;
 import com.nucleodb.library.database.modifications.ConnectionCreate;
 import com.nucleodb.library.database.modifications.ConnectionDelete;
@@ -21,22 +22,25 @@ import com.nucleodb.spring.events.ConnectionUpdatedEvent;
 import com.nucleodb.spring.events.DataEntryCreatedEvent;
 import com.nucleodb.spring.events.DataEntryDeletedEvent;
 import com.nucleodb.spring.events.DataEntryUpdatedEvent;
+import com.nucleodb.spring.mapping.NDBMappingContext;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mapping.PersistentEntity;
 import org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
 import org.springframework.data.repository.Repository;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-
 import java.beans.IntrospectionException;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 
-public class NDBRepositoryFactoryBean<T, ID, R extends Repository<T, ID>>
-    extends RepositoryFactoryBeanSupport<R, T, ID>{
+public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
+        extends RepositoryFactoryBeanSupport<T, S, ID>{
 
   private @NonNull String[] scanPackages;
   private @NonNull String mqsConfiguration;
@@ -44,26 +48,31 @@ public class NDBRepositoryFactoryBean<T, ID, R extends Repository<T, ID>>
   private @NonNull String nodeFilterDataEntry;
   private @NonNull String readToTime;
   private @NonNull NucleoDB.DBType dbType;
+  private @NonNull NDBMappingContext ndbMappingContext;
 
   private ApplicationEventPublisher publisher;
 
   private static @Nullable NucleoDB nucleoDB = null;
+
 
   /**
    * Creates a new {@link RepositoryFactoryBeanSupport} for the given repository interface.
    *
    * @param repositoryInterface must not be {@literal null}.
    */
-  protected NDBRepositoryFactoryBean(Class<? extends R> repositoryInterface) throws IncorrectDataEntryClassException, MissingDataEntryConstructorsException {
+  protected NDBRepositoryFactoryBean(Class<? extends T> repositoryInterface, NDBMappingContext ndbMappingContext) {
     super(repositoryInterface);
+    this.ndbMappingContext = ndbMappingContext;
   }
 
   static Map<String, String> getenv = System.getenv();
+
 
   @Override
   protected RepositoryFactorySupport createRepositoryFactory() {
     if(nucleoDB==null) {
       try {
+
         MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
 
         NodeFilter connectionNodeFilter = (NodeFilter) Class.forName(nodeFilterConnection).getDeclaredConstructor().newInstance();
@@ -163,10 +172,15 @@ public class NDBRepositoryFactoryBean<T, ID, R extends Repository<T, ID>>
       } catch (ClassNotFoundException e) {
         throw new RuntimeException(e);
       }
+      Set<Class<?>> entityClasses = Sets.newHashSet();
+      entityClasses.addAll(nucleoDB.getTables().values().stream().map(c -> (Class<?>)c.getConfig().getDataEntryClass()).collect(Collectors.toList()));
+      entityClasses.addAll(nucleoDB.getConnections().values().stream().map(c -> (Class<?>)c.getConfig().getConnectionClass()).collect(Collectors.toList()));
+      ndbMappingContext.register(entityClasses);
+      ndbMappingContext.afterPropertiesSet();
     }
-    return new NDBRepositoryFactory(nucleoDB, publisher);
-  }
 
+    return new NDBRepositoryFactory(nucleoDB, publisher, ndbMappingContext);
+  }
 
   @Override
   public boolean isSingleton() {
@@ -204,9 +218,15 @@ public class NDBRepositoryFactoryBean<T, ID, R extends Repository<T, ID>>
     this.nodeFilterConnection = nodeFilterConnection;
   }
 
+  @Override
+  public PersistentEntity<?, ?> getPersistentEntity() {
+    return ndbMappingContext.getRequiredPersistentEntity(getRepositoryInformation().getDomainType());
+  }
+
   public void setPublisher(ApplicationEventPublisher publisher) {
     this.publisher = publisher;
   }
+
   ConnectionEventListener connectionEventListener(){
     return new ConnectionEventListener<Connection>(){
       @Override
