@@ -41,12 +41,21 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
     public <S extends T> S save(S entity) {
         AtomicReference<S> returnedVal = new AtomicReference<>();
         try {
-            table.saveAsync(entity.copy(classType,false), (de) -> {
-                returnedVal.set((S) de);
-                synchronized (returnedVal) {
-                    returnedVal.notify();
-                }
-            });
+            if(table.getEntries().contains(entity)) {
+                table.saveAsync(entity.copy(classType,true), (de) -> {
+                    returnedVal.set((S) de);
+                    synchronized (returnedVal) {
+                        returnedVal.notify();
+                    }
+                });
+            }else {
+                table.saveAsync(entity, (de) -> {
+                    returnedVal.set((S) de);
+                    synchronized (returnedVal) {
+                        returnedVal.notify();
+                    }
+                });
+            }
             synchronized (returnedVal) {
                 returnedVal.wait();
             }
@@ -127,7 +136,11 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
     @Override
     public void delete(T entity) {
         try {
-            table.deleteSync(entity.copy(classType, false));
+            if(table.getEntries().contains(entity)) {
+                table.deleteSync(entity.copy(classType, true));
+            }else{
+                table.deleteSync(entity);
+            }
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (ObjectNotSavedException e) {

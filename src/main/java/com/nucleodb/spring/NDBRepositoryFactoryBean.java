@@ -259,4 +259,9 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
       }
     };
   }
+
+  @Nullable
+  public static NucleoDB getNucleoDB() {
+    return nucleoDB;
+  }
 }
