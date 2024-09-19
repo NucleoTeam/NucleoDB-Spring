@@ -38,24 +38,15 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
     }
 
     @Override
-    public <S extends T> S save(S entity) {
-        AtomicReference<S> returnedVal = new AtomicReference<>();
+    public T save(T entity) {
+        AtomicReference<T> returnedVal = new AtomicReference<>();
         try {
-            if(table.getEntries().contains(entity)) {
-                table.saveAsync(entity.copy(classType,true), (de) -> {
-                    returnedVal.set((S) de);
-                    synchronized (returnedVal) {
-                        returnedVal.notify();
-                    }
-                });
-            }else {
-                table.saveAsync(entity, (de) -> {
-                    returnedVal.set((S) de);
-                    synchronized (returnedVal) {
-                        returnedVal.notify();
-                    }
-                });
-            }
+            table.saveAsync(entity, (de) -> {
+                returnedVal.set((T) de);
+                synchronized (returnedVal) {
+                    returnedVal.notify();
+                }
+            });
             synchronized (returnedVal) {
                 returnedVal.wait();
             }
@@ -63,17 +54,23 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
             throw new RuntimeException(e);
         } catch (IncorrectDataEntryObjectException e) {
             throw new RuntimeException(e);
-        } catch (ObjectNotSavedException e) {
-            throw new RuntimeException(e);
         }
         return returnedVal.get();
     }
 
+    public void saveForget(T entity) {
+        try {
+            table.saveAndForget(entity);
+        } catch (IncorrectDataEntryObjectException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Override
-    public <S extends T> List<S> saveAll(Iterable<S> entities) {
-        List<S> items = new LinkedList<>();
+    public List<T> saveAll(Iterable<T> entities) {
+        List<T> items = new LinkedList<>();
         entities.forEach(entity -> {
-            S savedEntity = save(entity);
+            T savedEntity = save(entity);
             if (savedEntity == null) return;
             items.add(savedEntity);
         });
@@ -136,14 +133,8 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
     @Override
     public void delete(T entity) {
         try {
-            if(table.getEntries().contains(entity)) {
-                table.deleteSync(entity.copy(classType, true));
-            }else{
-                table.deleteSync(entity);
-            }
+            table.deleteSync(entity);
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ObjectNotSavedException e) {
             throw new RuntimeException(e);
         }
     }

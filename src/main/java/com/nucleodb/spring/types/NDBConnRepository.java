@@ -17,8 +17,8 @@ import java.util.stream.Collectors;
 
 public interface NDBConnRepository<C extends Connection<F, T>, ID extends String, F extends DataEntry, T extends DataEntry> extends Repository<C, ID> {
 
-  <S extends C> S save(S entity);
-  <S extends C> Iterable<S> saveAll(Iterable<S> entities);
+  C save(C entity);
+  Iterable<C> saveAll(Iterable<C> entities);
 
   Set<C> getByTo(T entity);
   Set<C> getByTo(T entity, ConnectionProjection projection);

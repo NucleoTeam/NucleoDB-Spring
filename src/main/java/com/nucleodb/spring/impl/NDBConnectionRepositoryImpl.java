@@ -156,11 +156,11 @@ public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends 
   }
 
   @Override
-  public <S extends C> S save(S entity) {
-    AtomicReference<S> returnedVal = new AtomicReference<>();
+  public C save(C entity) {
+    AtomicReference<C> returnedVal = new AtomicReference<>();
     try {
       connectionHandler.saveAsync(entity, (connection)->{
-        returnedVal.set((S)connection);
+        returnedVal.set((C)connection);
         synchronized (returnedVal) {
           returnedVal.notify();
         }
@@ -177,13 +177,13 @@ public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends 
   }
 
   @Override
-  public <S extends C> Set<S> saveAll(Iterable<S> entities) {
-    AtomicReference<Set<S>> returnedVal = new AtomicReference<>(new TreeSetExt<>());
+  public Set<C> saveAll(Iterable<C> entities) {
+    AtomicReference<Set<C>> returnedVal = new AtomicReference<>(new TreeSetExt<>());
     CountDownLatch countDownLatch = new CountDownLatch(Long.valueOf(StreamSupport.stream(entities.spliterator(), false).count()).intValue());
     StreamSupport.stream(entities.spliterator(), true).forEach(entity-> {
       try {
         connectionHandler.saveAsync(entity, (connection) -> {
-          returnedVal.getAcquire().add((S) connection);
+          returnedVal.getAcquire().add((C) connection);
           countDownLatch.countDown();
         });
       } catch (InvalidConnectionException e) {

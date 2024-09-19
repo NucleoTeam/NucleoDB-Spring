@@ -13,7 +13,7 @@ import java.util.Optional;
 @NoRepositoryBean
 public interface NDBDataRepository<T, ID> extends Repository<T, ID> {
 
-  <S extends T> List<S> saveAll(Iterable<S> entities);
+  List<T> saveAll(Iterable<T> entities);
 
   /*
    * (non-Javadoc)
@@ -29,6 +29,7 @@ public interface NDBDataRepository<T, ID> extends Repository<T, ID> {
 
   List<T> findAllById(Iterable<ID> iterable);
 
+  void saveForget(T entity);
   /*
    * (non-Javadoc)
    * @see org.springframework.data.repository.PagingAndSortingRepository#findAll(org.springframework.data.domain.Sort)
@@ -50,7 +51,7 @@ public interface NDBDataRepository<T, ID> extends Repository<T, ID> {
    *           a different value from that found in the persistence store. Also thrown if the entity is assumed to be
    *           present but does not exist in the database.
    */
-  <S extends T> S save(S entity);
+  T save(T entity);
 
 
   /**
