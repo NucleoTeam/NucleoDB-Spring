@@ -42,8 +42,11 @@ public class NDBRepositoryConfigurationExtension extends RepositoryConfiguration
 
   @Override
   public void registerBeansForRoot(BeanDefinitionRegistry registry, RepositoryConfigurationSource configurationSource) {
-    RootBeanDefinition beanDefinition = new RootBeanDefinition(NDBMappingContext.class);
-    registry.registerBeanDefinition("ndbMappingContext", beanDefinition);
+    // Only register ndbMappingContext if it doesn't already exist
+    if (!registry.containsBeanDefinition("ndbMappingContext")) {
+      RootBeanDefinition beanDefinition = new RootBeanDefinition(NDBMappingContext.class);
+      registry.registerBeanDefinition("ndbMappingContext", beanDefinition);
+    }
     super.registerBeansForRoot(registry, configurationSource);
   }
 
