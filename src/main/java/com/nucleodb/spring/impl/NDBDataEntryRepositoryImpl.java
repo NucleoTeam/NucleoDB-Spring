@@ -161,15 +161,24 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
                 int comparison = 0;
                 try {
                     java.lang.reflect.Field field = classType.getDeclaredField(order.getProperty());
+                    field.setAccessible(true);
                     Object o1Object = field.get(o1);
                     Object o2Object = field.get(o2);
+
                     if (field.getGenericType() == String.class) {
                         comparison = o1Object.toString().compareTo(o2Object.toString());
                     } else if (field.getGenericType() == Integer.class) {
                         comparison = Integer.compare((Integer) o1Object, (Integer) o2Object);
                     } else if (field.getGenericType() == Long.class) {
                         comparison = Long.compare((Long) o1Object, (Long) o2Object);
+                    } else if (field.getGenericType() == Double.class) {
+                        comparison = Double.compare((Double) o1Object, (Double) o2Object);
+                    } else if (field.getGenericType() == Float.class) {
+                        comparison = Float.compare((Float) o1Object, (Float) o2Object);
+                    } else if (Comparable.class.isAssignableFrom(field.getType())) {
+                        comparison = ((Comparable) o1Object).compareTo(o2Object);
                     }
+
                 } catch (NoSuchFieldException e) {
                     throw new RuntimeException(e);
                 } catch (IllegalAccessException e) {

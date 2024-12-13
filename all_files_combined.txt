@@ -1,0 +1,2724 @@
+[./src/main/resources/META-INF/spring.tooling]
+# Tooling related information for the cql namespace
+http\://www.springframework.org/schema/nucleodb@name=NucleoDB Namespace
+http\://www.springframework.org/schema/nucleodb@prefix=nucleodb
+http\://www.springframework.org/schema/nucleodb@icon=org/springframework/data/nucleodb/config/spring-nucleodb.gif[./src/main/resources/META-INF/spring.factories]
+org.springframework.data.repository.core.support.RepositoryFactorySupport=com.nucleodb.spring.NDBRepositoryFactory[./src/main/java/com/nucleodb/spring/impl/NDBDataEntryRepositoryImpl.java]
+package com.nucleodb.spring.impl;
+
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.library.database.tables.table.DataTable;
+import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryObjectException;
+import com.nucleodb.library.database.utils.exceptions.ObjectNotSavedException;
+import com.nucleodb.spring.types.NDBDataRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
+
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+
+public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBDataRepository<T, ID> {
+    private @Nullable DataTable table = null;
+    private final NucleoDB nucleoDB;
+    private final Class<T> classType;
+    private @Nullable Class<?> tableClass = null;
+    private final ApplicationEventPublisher publisher;
+
+    public NDBDataEntryRepositoryImpl(NucleoDB nucleoDB, Class<T> classType, ApplicationEventPublisher publisher) {
+        this.nucleoDB = nucleoDB;
+        this.classType = classType;
+        this.publisher = publisher;
+        Type[] actualTypeArguments = ((ParameterizedType) classType.getGenericSuperclass()).getActualTypeArguments();
+        if (actualTypeArguments.length == 1) {
+            this.tableClass = (Class<?>) actualTypeArguments[0];
+            this.table = nucleoDB.getTable(this.tableClass);
+        }
+    }
+
+    @Override
+    public T save(T entity) {
+        AtomicReference<T> returnedVal = new AtomicReference<>();
+        try {
+            table.saveAsync(entity, (de) -> {
+                returnedVal.set((T) de);
+                synchronized (returnedVal) {
+                    returnedVal.notify();
+                }
+            });
+            synchronized (returnedVal) {
+                returnedVal.wait();
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (IncorrectDataEntryObjectException e) {
+            throw new RuntimeException(e);
+        }
+        return returnedVal.get();
+    }
+
+    public void saveForget(T entity) {
+        try {
+            table.saveAndForget(entity);
+        } catch (IncorrectDataEntryObjectException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<T> saveAll(Iterable<T> entities) {
+        List<T> items = new LinkedList<>();
+        entities.forEach(entity -> {
+            T savedEntity = save(entity);
+            if (savedEntity == null) return;
+            items.add(savedEntity);
+        });
+        return items;
+    }
+
+    @Override
+    public T findById(ID id) {
+        Set<T> dataEntrySet = table.get("id", id);
+        System.out.println("fetched Id: "+id);
+        if (dataEntrySet != null && dataEntrySet.size() > 0) {
+            return dataEntrySet.size()>0? (T)dataEntrySet.toArray()[0]:null;
+        }
+        return null;
+    }
+
+    @Override
+    public boolean existsById(ID id) {
+        Set<DataEntry> dataEntrySet = table.get("id", id);
+        System.out.println("fetched Id: "+id);
+        if (dataEntrySet != null && dataEntrySet.size() > 0) {
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public List<T> findAll() {
+        assert table != null;
+        return List.copyOf(table.getEntries());
+    }
+
+    @Override
+    public List<T> findAllById(Iterable<ID> iterable) {
+        List<T> items = new LinkedList<>();
+        for (ID id : iterable) {
+            T byId = findById(id);
+            System.out.println("fetched Id: "+id);
+            if (byId!=null) {
+                items.add(byId);
+            }
+        }
+        return items;
+    }
+
+    @Override
+    public long count() {
+        return table.getSize();
+    }
+
+    @Override
+    public void deleteById(ID id) {
+        System.out.println("delete by id: "+id);
+        T byId = findById(id);
+        if (byId == null)
+            return;
+        delete(byId);
+    }
+
+    @Override
+    public void delete(T entity) {
+        try {
+            table.deleteSync(entity);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void deleteAllById(Iterable<? extends ID> ids) {
+        ids.forEach(id -> deleteById(id));
+    }
+
+    @Override
+    public void deleteAll(Iterable<? extends T> entities) {
+        entities.forEach(de -> delete(de));
+    }
+
+    @Override
+    public void deleteAll() {
+        table.getEntries().forEach(de -> delete((T) de));
+    }
+
+    @Override
+    public List<T> findAll(Sort sort) {
+        return findAll().stream().sorted((o1, o2) -> {
+            for (Sort.Order order : sort) {
+                int comparison = 0;
+                try {
+                    java.lang.reflect.Field field = classType.getDeclaredField(order.getProperty());
+                    Object o1Object = field.get(o1);
+                    Object o2Object = field.get(o2);
+                    if (field.getGenericType() == String.class) {
+                        comparison = o1Object.toString().compareTo(o2Object.toString());
+                    } else if (field.getGenericType() == Integer.class) {
+                        comparison = Integer.compare((Integer) o1Object, (Integer) o2Object);
+                    } else if (field.getGenericType() == Long.class) {
+                        comparison = Long.compare((Long) o1Object, (Long) o2Object);
+                    }
+                } catch (NoSuchFieldException e) {
+                    throw new RuntimeException(e);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+                if (comparison != 0) {
+                    return order.isAscending() ? comparison : -comparison;
+                }
+            }
+            return 0;
+        }).collect(Collectors.toList());
+    }
+}
+[./src/main/java/com/nucleodb/spring/impl/NDBConnectionRepositoryImpl.java]
+package com.nucleodb.spring.impl;
+
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.connection.ConnectionHandler;
+import com.nucleodb.library.database.tables.connection.ConnectionProjection;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.library.database.utils.InvalidConnectionException;
+import com.nucleodb.library.database.utils.Pagination;
+import com.nucleodb.library.database.utils.TreeSetExt;
+import com.nucleodb.spring.types.NDBConnRepository;
+import lombok.AllArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
+
+import java.io.IOException;
+import java.util.LinkedHashSet;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends String, F extends DataEntry, T extends DataEntry> implements NDBConnRepository<C, ID, F, T>{
+  private @Nullable ConnectionHandler connectionHandler = null;
+  private final NucleoDB nucleoDB;
+  private final Class<C> classType;
+  private final ApplicationEventPublisher publisher;
+  public NDBConnectionRepositoryImpl(NucleoDB nucleoDB, Class<C> classType, ApplicationEventPublisher publisher) {
+    this.nucleoDB = nucleoDB;
+    this.classType = classType;
+    this.connectionHandler = nucleoDB.getConnectionHandler(classType);
+    this.publisher = publisher;
+  }
+
+  @Override
+  public Set<C> getByTo(T entity) {
+    return getByTo(entity, null, null);
+  }
+
+  @Override
+  public Set<C> getByTo(T entity, Pagination pagination) {
+    return getByTo(entity, pagination, null);
+  }
+
+  @Override
+  public Set<C> getByTo(T entity, Predicate<C> filter) {
+    return getByTo(entity, null, filter);
+  }
+
+  @Override
+  public Set<C> getByTo(T entity, Pagination pagination, Predicate<C> filter) {
+    ConnectionProjection connectionProjection = new ConnectionProjection();
+    if(pagination!=null){
+      connectionProjection.setPagination(pagination);
+    }
+    if(filter!=null){
+      connectionProjection.setFilter((Predicate) filter);
+    }
+    return getByTo(entity, connectionProjection);
+  }
+
+  @Override
+  public Set<F> getFromByTo(T entity) {
+    return getByTo(entity).stream().map(c->c.fromEntry()).collect(Collectors.toSet());
+  }
+  @Override
+  public Set<F> getFromByTo(T entity, Pagination pagination) {
+    return getByTo(entity, pagination, null).stream().map(c->c.fromEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<F> getFromByTo(T entity, Predicate<C> filter) {
+    return getByTo(entity, null, filter).stream().map(c->c.fromEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<F> getFromByTo(T entity, Pagination pagination, Predicate<C> filter) {
+    return getByTo(entity, pagination, filter).stream().map(c->c.fromEntry()).collect(Collectors.toSet());
+  }
+
+
+  @Override
+  public Set<C> getByFrom(F entity) {
+    return getByFrom(entity, null, null);
+  }
+
+  @Override
+  public Set<C> getByFrom(F entity, Predicate<C> filter) {
+    return getByFrom(entity, null, filter);
+  }
+
+  @Override
+  public Set<C> getByFrom(F entity, Pagination pagination) {
+    return getByFrom(entity, pagination, null);
+  }
+  @Override
+  public Set<C> getByFrom(F entity, Pagination pagination, Predicate<C> filter) {
+    ConnectionProjection connectionProjection = new ConnectionProjection();
+    if(pagination!=null){
+      connectionProjection.setPagination(pagination);
+    }
+    if(filter!=null){
+      connectionProjection.setFilter((Predicate) filter);
+    }
+    return getByFrom(entity, connectionProjection);
+  }
+
+  @Override
+  public Set<T> getToByFrom(F entity) {
+    return getByFrom(entity, null, null).stream().map(c->c.toEntry()).collect(Collectors.toSet());
+  }
+  @Override
+  public Set<T> getToByFrom(F entity, Pagination pagination) {
+    return getByFrom(entity, pagination, null).stream().map(c->c.toEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<T> getToByFrom(F entity, Predicate<C> filter) {
+    return getByFrom(entity, null, filter).stream().map(c->c.toEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<T> getToByFrom(F entity, Pagination pagination, Predicate<C> filter) {
+    return getByFrom(entity, pagination, filter).stream().map(c->c.toEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity) {
+    return getByFromAndTo(fromEntity, toEntity, null, null);
+  }
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination) {
+    return getByFromAndTo(fromEntity, toEntity, pagination, null);
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, Predicate<C> filter) {
+    return getByFromAndTo(fromEntity, toEntity, null, filter);
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination, Predicate<C> filter) {
+    ConnectionProjection connectionProjection = new ConnectionProjection();
+    if(pagination!=null){
+      connectionProjection.setPagination(pagination);
+    }
+    if(filter!=null){
+      connectionProjection.setFilter((Predicate) filter);
+    }
+    return getByFromAndTo(fromEntity, toEntity, connectionProjection);
+  }
+
+  @Override
+  public C save(C entity) {
+    AtomicReference<C> returnedVal = new AtomicReference<>();
+    try {
+      connectionHandler.saveAsync(entity, (connection)->{
+        returnedVal.set((C)connection);
+        synchronized (returnedVal) {
+          returnedVal.notify();
+        }
+      });
+      synchronized (returnedVal) {
+        returnedVal.wait();
+      }
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    } catch (InvalidConnectionException e) {
+      throw new RuntimeException(e);
+    }
+    return returnedVal.get();
+  }
+
+  @Override
+  public Set<C> saveAll(Iterable<C> entities) {
+    AtomicReference<Set<C>> returnedVal = new AtomicReference<>(new TreeSetExt<>());
+    CountDownLatch countDownLatch = new CountDownLatch(Long.valueOf(StreamSupport.stream(entities.spliterator(), false).count()).intValue());
+    StreamSupport.stream(entities.spliterator(), true).forEach(entity-> {
+      try {
+        connectionHandler.saveAsync(entity, (connection) -> {
+          returnedVal.getAcquire().add((C) connection);
+          countDownLatch.countDown();
+        });
+      } catch (InvalidConnectionException e) {
+        countDownLatch.countDown();
+        throw new RuntimeException(e);
+      }
+    });
+    try {
+      countDownLatch.await(5, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    return returnedVal.get();
+  }
+
+  @Override
+  public C findById(ID uuid) {
+    Object o = connectionHandler.getConnectionByUUID().get(uuid);
+    if(o!=null) {
+      return (C) o;
+    }
+    return null;
+  }
+
+  @Override
+  public boolean existsById(ID id) {
+    return findById(id)!=null;
+  }
+
+  @Override
+  public Set<C> findAll() {
+    return (Set<C>) connectionHandler.getConnections();
+  }
+
+  @Override
+  public Set<C> findAllById(Iterable<ID> ids) {
+    return StreamSupport
+        .stream(ids.spliterator(), true)
+        .map(id->findById(id))
+        .collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> findAll(Sort sort) {
+    return findAll().stream().sorted((o1, o2) -> {
+      for (Sort.Order order : sort) {
+        int comparison = 0;
+        try {
+          java.lang.reflect.Field field = classType.getDeclaredField(order.getProperty());
+          Object o1Object = field.get(o1);
+          Object o2Object = field.get(o2);
+          if (field.getGenericType() == String.class) {
+            comparison = o1Object.toString().compareTo(o2Object.toString());
+          } else if (field.getGenericType() == Integer.class) {
+            comparison = Integer.compare((Integer) o1Object, (Integer) o2Object);
+          } else if (field.getGenericType() == Long.class) {
+            comparison = Long.compare((Long) o1Object, (Long) o2Object);
+          }
+        } catch (NoSuchFieldException e) {
+          throw new RuntimeException(e);
+        } catch (IllegalAccessException e) {
+          throw new RuntimeException(e);
+        }
+        if (comparison != 0) {
+          return order.isAscending() ? comparison : -comparison;
+        }
+      }
+      return 0;
+    }).collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  @Override
+  public long count() {
+    return connectionHandler.getConnections().size();
+  }
+
+  @Override
+  public void deleteById(ID id) {
+    C byId = findById(id);
+    if(byId!=null){
+      delete(byId);
+    }
+  }
+
+  @Override
+  public void delete(C entity) {
+    try {
+      connectionHandler.deleteSync(entity.copy(classType, true));
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public void deleteAllById(Iterable<? extends ID> ids) {
+    StreamSupport
+        .stream(ids.spliterator(), true)
+        .forEach(id->deleteById(id));
+  }
+
+  @Override
+  public void deleteAll(Iterable<? extends C> entities) {
+    StreamSupport
+        .stream(entities.spliterator(), true)
+        .forEach(entity->delete(entity));
+  }
+
+  @Override
+  public void deleteAll() {
+    // not implemented unsafe!
+  }
+
+  @Override
+  public C getById(String uuid) {
+    return (C) connectionHandler.getConnectionByUUID().get(uuid);
+  }
+
+  @Override
+  public Set<C> getByTo(T entity, ConnectionProjection projection) {
+    return connectionHandler.getReverseByTo(entity, projection);
+  }
+
+  @Override
+  public Set<F> getFromByTo(T entity, ConnectionProjection projection) {
+    return getByTo(entity, projection).stream().map(c->c.fromEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> getByFrom(F entity, ConnectionProjection projection) {
+    return connectionHandler.getByFrom(entity, projection);
+  }
+
+  @Override
+  public Set<T> getToByFrom(F entity, ConnectionProjection projection) {
+    return getByFrom(entity, projection).stream().map(c->c.toEntry()).collect(Collectors.toSet());
+  }
+
+  @Override
+  public Set<C> getByFromAndTo(F fromEntity, T toEntity, ConnectionProjection projection) {
+    return connectionHandler.getByFromAndTo(fromEntity, toEntity, projection);
+  }
+}
+[./src/main/java/com/nucleodb/spring/mapping/NDBPersistentProperty.java]
+package com.nucleodb.spring.mapping;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.data.mapping.Association;
+import org.springframework.data.mapping.PersistentEntity;
+import org.springframework.data.mapping.PersistentProperty;
+import org.springframework.data.mapping.model.Property;
+import org.springframework.data.mapping.model.SimpleTypeHolder;
+import org.springframework.data.util.TypeInformation;
+
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.List;
+
+public class NDBPersistentProperty implements PersistentProperty<NDBPersistentProperty> {
+
+
+    private final Property property;
+    private final SimpleTypeHolder simpleTypeHolder;
+    private final Field field;
+    private final NDBPersistentEntity<?> owner;
+    boolean isTransient;
+
+    public NDBPersistentProperty(Property property, SimpleTypeHolder simpleTypeHolder, NDBPersistentEntity<?> owner) throws NoSuchFieldException {
+        this.property = property;
+        this.simpleTypeHolder = simpleTypeHolder;
+        this.owner = owner;
+        field = getFieldByNameIncludingParents(owner.getType(), property.getName());
+    }
+
+
+    public Field getFieldByNameIncludingParents(Class<?> clazz, String fieldName) throws NoSuchFieldException {
+        Class<?> currentClass = clazz;
+
+        while (currentClass != null) {
+            try {
+                Field field = currentClass.getDeclaredField(fieldName);
+                // Check if the field is transient
+                isTransient = Modifier.isTransient(field.getModifiers());
+                return field;
+            } catch (NoSuchFieldException e) {
+                // Field not found in this class, move to the parent class
+                currentClass = currentClass.getSuperclass();
+            }
+        }
+
+        throw new NoSuchFieldException("Field '" + fieldName + "' not found in class hierarchy.");
+    }
+
+    @Override
+    public PersistentEntity<?, NDBPersistentProperty> getOwner() {
+        return owner;
+    }
+
+    @Override
+    public String getName() {
+        return property.getName();
+    }
+
+    @Override
+    public Class<?> getType() {
+        return field.getType();
+    }
+
+    @Override
+    public TypeInformation<?> getTypeInformation() {
+        return TypeInformation.of(field.getType());
+    }
+
+    @Override
+    public Iterable<? extends TypeInformation<?>> getPersistentEntityTypeInformation() {
+        return List.of(TypeInformation.of(field.getType()));
+    }
+
+    @Override
+    public Method getGetter() {
+        return property.getGetter().get();
+    }
+
+    @Override
+    public Method getSetter() {
+        System.out.println("get setter for field: "+field.getName());
+        return property.getSetter().get();
+    }
+
+    @Override
+    public Method getWither() {
+        return null;
+    }
+
+    @Override
+    public Field getField() {
+        return field;
+    }
+
+    @Override
+    public String getSpelExpression() {
+        return "";
+    }
+
+    @Override
+    public Association<NDBPersistentProperty> getAssociation() {
+        return null;
+    }
+
+    @Override
+    public boolean isEntity() {
+        return !simpleTypeHolder.isSimpleType(getRawType());
+    }
+
+    @Override
+    public boolean isIdProperty() {
+        // Logic to determine if this property is the ID (e.g., check for field name "id")
+        if(Connection.class.isAssignableFrom(owner.getType())){
+            return "uuid".equals(getName());
+        }else if(DataEntry.class.isAssignableFrom(owner.getType())){
+            return "key".equals(getName());
+        }
+        return false;
+    }
+
+    @Override
+    public boolean isVersionProperty() {
+        if(DataEntry.class.isAssignableFrom(owner.getType())){
+            switch (field.getName()){
+                case "version": return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean isCollectionLike() {
+        return Iterable.class.isAssignableFrom(getRawType());
+    }
+
+    @Override
+    public boolean isMap() {
+        return java.util.Map.class.isAssignableFrom(getRawType());
+    }
+
+    @Override
+    public boolean isArray() {
+        return getRawType().isArray();
+    }
+
+    @Override
+    public boolean isTransient() {
+        return isTransient;
+    }
+
+    @Override
+    public boolean isWritable() {
+        return getSetter()!=null;
+    }
+
+    @Override
+    public boolean isReadable() {
+        return getGetter()!=null;
+    }
+
+    @Override
+    public boolean isImmutable() {
+        return false;
+    }
+
+
+    @Override
+    public boolean isAssociation() {
+        return false;
+    }
+
+    @Override
+    public Class<?> getComponentType() {
+        return field.getType().getComponentType();
+    }
+
+    @Override
+    public Class<?> getRawType() {
+        return property.getType();
+    }
+
+    @Override
+    public Class<?> getMapValueType() {
+        return property.getType();
+    }
+
+    @Override
+    public Class<?> getActualType() {
+        return property.getType();
+    }
+
+    @Override
+    public <A extends Annotation> A findAnnotation(Class<A> annotationType) {
+        return field.getAnnotation(annotationType);
+    }
+
+    @Override
+    public <A extends Annotation> A findPropertyOrOwnerAnnotation(Class<A> annotationType) {
+        return owner.getType().getAnnotation(annotationType);
+    }
+
+    @Override
+    public boolean isAnnotationPresent(Class<? extends Annotation> annotationType) {
+        return field.isAnnotationPresent(annotationType);
+    }
+
+    @Override
+    public boolean usePropertyAccess() {
+        return false;
+    }
+
+    @Override
+    public Class<?> getAssociationTargetType() {
+        return null;
+    }
+
+    @Override
+    public TypeInformation<?> getAssociationTargetTypeInformation() {
+        return null;
+    }
+
+}[./src/main/java/com/nucleodb/spring/mapping/NDBEntityInformationDataEntry.java]
+package com.nucleodb.spring.mapping;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.data.repository.core.EntityInformation;
+
+import java.lang.reflect.Field;
+
+public class NDBEntityInformationDataEntry<T extends DataEntry> implements EntityInformation<T, String> {
+    
+    private final Class<T> entityClass;
+    
+    public NDBEntityInformationDataEntry(Class<T> entityClass) {
+        this.entityClass = entityClass;
+    }
+
+    @Override
+    public boolean isNew(T entity) {
+        // Assuming that if the ID is null, the entity is new
+        return getId(entity) == null;
+    }
+
+    @Override
+    public String getId(T entity) {
+        try {
+            Field idField = entityClass.getDeclaredField("key");
+            idField.setAccessible(true);
+            return (String) idField.get(entity);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new IllegalStateException("Could not retrieve id field", e);
+        }
+    }
+
+    @Override
+    public Class<String> getIdType() {
+        return String.class;
+    }
+    
+    @Override
+    public Class<T> getJavaType() {
+        return entityClass;
+    }
+}[./src/main/java/com/nucleodb/spring/mapping/NDBMappingContext.java]
+package com.nucleodb.spring.mapping;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.library.database.utils.Serializer;
+import org.springframework.data.mapping.MappingException;
+import org.springframework.data.mapping.context.AbstractMappingContext;
+import org.springframework.data.mapping.model.Property;
+import org.springframework.data.mapping.model.SimpleTypeHolder;
+import org.springframework.data.util.TypeInformation;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+public class NDBMappingContext extends AbstractMappingContext<NDBPersistentEntity<?>, NDBPersistentProperty> {
+    public NDBMappingContext() {
+    }
+
+    public void register(Set<Class<?>> entityClasses) {
+        Set<Class<?>> entityClassSet = new HashSet<>(entityClasses);
+        entityClassSet.addAll(entityClasses.stream().filter(clazz-> DataEntry.class.isAssignableFrom(clazz)).map(de->{
+            Type genericSuperclass = de.getGenericSuperclass();
+            if (genericSuperclass instanceof ParameterizedType) {
+                ParameterizedType parameterizedType = (ParameterizedType) genericSuperclass;
+
+                // Get the actual type arguments (in this case, it will be String due to type erasure)
+                Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+                for (Type type : actualTypeArguments) {
+                    return (Class<?>)type;
+                }
+            }
+            return null;
+        }).filter(c->c!=null).collect(Collectors.toSet()));
+        setInitialEntitySet(entityClassSet);
+    }
+
+    @Override
+    public NDBPersistentEntity<?> getRequiredPersistentEntity(NDBPersistentProperty persistentProperty) throws MappingException {
+        System.out.println(persistentProperty.getName());
+        System.out.println(persistentProperty.getType().getName());
+        System.out.println(persistentProperty.getActualType().getName());
+
+        return super.getRequiredPersistentEntity(persistentProperty.getActualType());
+    }
+
+    @Override
+    protected <T> NDBPersistentEntity<T> createPersistentEntity(TypeInformation<T> typeInformation) {
+        return new NDBPersistentEntity<>(typeInformation);
+    }
+
+    @Override
+    protected NDBPersistentProperty createPersistentProperty(Property propertyDescriptor, NDBPersistentEntity<?> owner, SimpleTypeHolder simpleTypeHolder) {
+        try {
+            return new NDBPersistentProperty(propertyDescriptor, simpleTypeHolder, owner);
+        } catch (NoSuchFieldException e) {
+            return null;
+        }
+    }
+
+
+}[./src/main/java/com/nucleodb/spring/mapping/NDBPersistentEntity.java]
+package com.nucleodb.spring.mapping;
+
+import org.springframework.data.mapping.model.BasicPersistentEntity;
+import org.springframework.data.util.TypeInformation;
+
+public class NDBPersistentEntity<T> extends BasicPersistentEntity<T, NDBPersistentProperty> {
+
+    public NDBPersistentEntity(TypeInformation<T> information) {
+        super(information);
+    }
+}[./src/main/java/com/nucleodb/spring/mapping/NDBEntityInformationConnection.java]
+package com.nucleodb.spring.mapping;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import org.springframework.data.repository.core.EntityInformation;
+
+import java.lang.reflect.Field;
+
+public class NDBEntityInformationConnection<T extends Connection> implements EntityInformation<T, String> {
+
+    private final Class<T> entityClass;
+
+    public NDBEntityInformationConnection(Class<T> entityClass) {
+        this.entityClass = entityClass;
+    }
+
+    @Override
+    public boolean isNew(T entity) {
+        // Assuming that if the ID is null, the entity is new
+        return getId(entity) == null;
+    }
+
+    @Override
+    public String getId(T entity) {
+        try {
+            Field idField = entityClass.getDeclaredField("uuid");
+            idField.setAccessible(true);
+            return (String) idField.get(entity);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new IllegalStateException("Could not retrieve id field", e);
+        }
+    }
+
+    @Override
+    public Class<String> getIdType() {
+        return String.class;
+    }
+    
+    @Override
+    public Class<T> getJavaType() {
+        return entityClass;
+    }
+}[./src/main/java/com/nucleodb/spring/types/NDBConnRepository.java]
+package com.nucleodb.spring.types;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.connection.ConnectionProjection;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.library.database.utils.Pagination;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+public interface NDBConnRepository<C extends Connection<F, T>, ID extends String, F extends DataEntry, T extends DataEntry> extends Repository<C, ID> {
+
+  C save(C entity);
+  Iterable<C> saveAll(Iterable<C> entities);
+
+  Set<C> getByTo(T entity);
+  Set<C> getByTo(T entity, ConnectionProjection projection);
+  Set<C> getByTo(T entity, Pagination pagination);
+  Set<C> getByTo(T entity, Predicate<C> filter);
+  Set<C> getByTo(T entity, Pagination pagination, Predicate<C> filter);
+  Set<F> getFromByTo(T entity);
+  Set<F> getFromByTo(T entity, ConnectionProjection projection);
+  Set<F> getFromByTo(T entity, Pagination pagination);
+  Set<F> getFromByTo(T entity, Predicate<C> filter);
+  Set<F> getFromByTo(T entity, Pagination pagination, Predicate<C> filter);
+  Set<C> getByFrom(F entity);
+  Set<C> getByFrom(F entity, ConnectionProjection projection);
+  Set<C> getByFrom(F entity, Predicate<C> filter);
+  Set<C> getByFrom(F entity, Pagination pagination);
+  Set<C> getByFrom(F entity, Pagination pagination, Predicate<C> filter);
+  Set<T> getToByFrom(F entity);
+  Set<T> getToByFrom(F entity, ConnectionProjection projection);
+  Set<T> getToByFrom(F entity, Pagination pagination);
+  Set<T> getToByFrom(F entity, Predicate<C> filter);
+  Set<T> getToByFrom(F entity, Pagination pagination, Predicate<C> filter);
+  Set<C> getByFromAndTo(F fromEntity, T toEntity);
+  Set<C> getByFromAndTo(F fromEntity, T toEntity, ConnectionProjection projection);
+  Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination);
+  Set<C> getByFromAndTo(F fromEntity, T toEntity, Predicate<C> filter);
+  Set<C> getByFromAndTo(F fromEntity, T toEntity, Pagination pagination, Predicate<C> filter);
+
+  C getById(String uuid);
+
+  Set<C> findAll();
+
+  /*
+   * (non-Javadoc)
+   * @see org.springframework.data.repository.CrudRepository#findAllById(java.lang.Iterable)
+   */
+
+  Set<C> findAllById(Iterable<ID> iterable);
+
+  /*
+   * (non-Javadoc)
+   * @see org.springframework.data.repository.PagingAndSortingRepository#findAll(org.springframework.data.domain.Sort)
+   */
+  Set<C> findAll(Sort sort);
+
+  C findById(ID uuid);
+
+
+
+  /**
+   * Returns whether an entity with the given id exists.
+   *
+   * @param uuid must not be {@literal null}.
+   * @return {@literal true} if an entity with the given id exists, {@literal false} otherwise.
+   * @throws IllegalArgumentException if {@literal id} is {@literal null}.
+   */
+  boolean existsById(ID uuid);
+
+  /**
+   * Returns the number of entities available.
+   *
+   * @return the number of entities.
+   */
+  long count();
+
+  /**
+   * Deletes the entity with the given id.
+   * <p>
+   * If the entity is not found in the persistence store it is silently ignored.
+   *
+   * @param uuid must not be {@literal null}.
+   * @throws IllegalArgumentException in case the given {@literal id} is {@literal null}
+   */
+  void deleteById(ID uuid);
+
+  /**
+   * Deletes a given entity.
+   *
+   * @param entity must not be {@literal null}.
+   * @throws IllegalArgumentException in case the given entity is {@literal null}.
+   * @throws OptimisticLockingFailureException when the entity uses optimistic locking and has a version attribute with
+   *           a different value from that found in the persistence store. Also thrown if the entity is assumed to be
+   *           present but does not exist in the database.
+   */
+  void delete(C entity);
+
+  /**
+   * Deletes all instances of the type {@code T} with the given IDs.
+   * <p>
+   * Entities that aren't found in the persistence store are silently ignored.
+   *
+   * @param ids must not be {@literal null}. Must not contain {@literal null} elements.
+   * @throws IllegalArgumentException in case the given {@literal ids} or one of its elements is {@literal null}.
+   * @since 2.5
+   */
+  void deleteAllById(Iterable<? extends ID> ids);
+
+  /**
+   * Deletes the given entities.
+   *
+   * @param entities must not be {@literal null}. Must not contain {@literal null} elements.
+   * @throws IllegalArgumentException in case the given {@literal entities} or one of its entities is {@literal null}.
+   * @throws OptimisticLockingFailureException when at least one entity uses optimistic locking and has a version
+   *           attribute with a different value from that found in the persistence store. Also thrown if at least one
+   *           entity is assumed to be present but does not exist in the database.
+   */
+  void deleteAll(Iterable<? extends C> entities);
+
+  /**
+   * Deletes all entities managed by the repository.
+   */
+  void deleteAll();
+}
+[./src/main/java/com/nucleodb/spring/types/NDBDataRepository.java]
+package com.nucleodb.spring.types;
+
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.NoRepositoryBean;
+import org.springframework.data.repository.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+
+@NoRepositoryBean
+public interface NDBDataRepository<T, ID> extends Repository<T, ID> {
+
+  List<T> saveAll(Iterable<T> entities);
+
+  /*
+   * (non-Javadoc)
+   * @see org.springframework.data.repository.CrudRepository#findAll()
+   */
+
+  List<T> findAll();
+
+  /*
+   * (non-Javadoc)
+   * @see org.springframework.data.repository.CrudRepository#findAllById(java.lang.Iterable)
+   */
+
+  List<T> findAllById(Iterable<ID> iterable);
+
+  void saveForget(T entity);
+  /*
+   * (non-Javadoc)
+   * @see org.springframework.data.repository.PagingAndSortingRepository#findAll(org.springframework.data.domain.Sort)
+   */
+  List<T> findAll(Sort sort);
+
+  T findById(ID id);
+
+
+
+  /**
+   * Saves a given entity. Use the returned instance for further operations as the save operation might have changed the
+   * entity instance completely.
+   *
+   * @param entity must not be {@literal null}.
+   * @return the saved entity; will never be {@literal null}.
+   * @throws IllegalArgumentException in case the given {@literal entity} is {@literal null}.
+   * @throws OptimisticLockingFailureException when the entity uses optimistic locking and has a version attribute with
+   *           a different value from that found in the persistence store. Also thrown if the entity is assumed to be
+   *           present but does not exist in the database.
+   */
+  T save(T entity);
+
+
+  /**
+   * Returns whether an entity with the given id exists.
+   *
+   * @param id must not be {@literal null}.
+   * @return {@literal true} if an entity with the given id exists, {@literal false} otherwise.
+   * @throws IllegalArgumentException if {@literal id} is {@literal null}.
+   */
+  boolean existsById(ID id);
+
+  /**
+   * Returns the number of entities available.
+   *
+   * @return the number of entities.
+   */
+  long count();
+
+  /**
+   * Deletes the entity with the given id.
+   * <p>
+   * If the entity is not found in the persistence store it is silently ignored.
+   *
+   * @param id must not be {@literal null}.
+   * @throws IllegalArgumentException in case the given {@literal id} is {@literal null}
+   */
+  void deleteById(ID id);
+
+  /**
+   * Deletes a given entity.
+   *
+   * @param entity must not be {@literal null}.
+   * @throws IllegalArgumentException in case the given entity is {@literal null}.
+   * @throws OptimisticLockingFailureException when the entity uses optimistic locking and has a version attribute with
+   *           a different value from that found in the persistence store. Also thrown if the entity is assumed to be
+   *           present but does not exist in the database.
+   */
+  void delete(T entity);
+
+  /**
+   * Deletes all instances of the type {@code T} with the given IDs.
+   * <p>
+   * Entities that aren't found in the persistence store are silently ignored.
+   *
+   * @param ids must not be {@literal null}. Must not contain {@literal null} elements.
+   * @throws IllegalArgumentException in case the given {@literal ids} or one of its elements is {@literal null}.
+   * @since 2.5
+   */
+  void deleteAllById(Iterable<? extends ID> ids);
+
+  /**
+   * Deletes the given entities.
+   *
+   * @param entities must not be {@literal null}. Must not contain {@literal null} elements.
+   * @throws IllegalArgumentException in case the given {@literal entities} or one of its entities is {@literal null}.
+   * @throws OptimisticLockingFailureException when at least one entity uses optimistic locking and has a version
+   *           attribute with a different value from that found in the persistence store. Also thrown if at least one
+   *           entity is assumed to be present but does not exist in the database.
+   */
+  void deleteAll(Iterable<? extends T> entities);
+
+  /**
+   * Deletes all entities managed by the repository.
+   */
+  void deleteAll();
+}[./src/main/java/com/nucleodb/spring/config/NDBInstance.java]
+package com.nucleodb.spring.config;
+
+import com.nucleodb.library.NucleoDB;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class NDBInstance {
+    @Bean
+    public NucleoDB createNucleoDB(){
+        return new NucleoDB();
+    }
+}
+[./src/main/java/com/nucleodb/spring/config/NDBRepositoryRegistrar.java]
+package com.nucleodb.spring.config;
+
+import org.springframework.data.repository.config.RepositoryBeanDefinitionRegistrarSupport;
+import org.springframework.data.repository.config.RepositoryConfigurationExtension;
+
+import java.lang.annotation.Annotation;
+
+public class NDBRepositoryRegistrar extends RepositoryBeanDefinitionRegistrarSupport{
+  @Override
+  protected Class<? extends Annotation> getAnnotation() {
+    return EnableNDBRepositories.class;
+  }
+
+  @Override
+  protected RepositoryConfigurationExtension getExtension() {
+    return new NDBRepositoryConfigurationExtension();
+  }
+}
+[./src/main/java/com/nucleodb/spring/config/NDBRepositoryConfigurationExtension.java]
+package com.nucleodb.spring.config;
+
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.tables.annotation.Conn;
+import com.nucleodb.library.database.tables.annotation.Table;
+import com.nucleodb.library.mqs.config.MQSConfiguration;
+import com.nucleodb.spring.NDBRepositoryFactoryBean;
+import com.nucleodb.spring.mapping.NDBMappingContext;
+import com.nucleodb.spring.types.NDBConnRepository;
+import com.nucleodb.spring.types.NDBDataRepository;
+import org.springframework.beans.factory.support.BeanDefinitionBuilder;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.data.mapping.context.PersistentEntities;
+import org.springframework.data.repository.config.AnnotationRepositoryConfigurationSource;
+import org.springframework.data.repository.config.RepositoryConfigurationExtensionSupport;
+import org.springframework.data.repository.config.RepositoryConfigurationSource;
+import org.springframework.data.repository.config.XmlRepositoryConfigurationSource;
+import org.springframework.data.repository.core.RepositoryMetadata;
+
+import java.lang.annotation.Annotation;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Optional;
+
+public class NDBRepositoryConfigurationExtension extends RepositoryConfigurationExtensionSupport{
+  @Override
+  public String getModuleName() {
+    return "NucleoDB";
+  }
+
+  @Override
+  protected String getModulePrefix() {
+    return "nucleodb";
+  }
+
+
+  @Override
+  public String getRepositoryFactoryBeanClassName() {
+    return NDBRepositoryFactoryBean.class.getName();
+  }
+
+  @Override
+  public void registerBeansForRoot(BeanDefinitionRegistry registry, RepositoryConfigurationSource configurationSource) {
+    // Only register ndbMappingContext if it doesn't already exist
+    if (!registry.containsBeanDefinition("ndbMappingContext")) {
+      RootBeanDefinition beanDefinition = new RootBeanDefinition(NDBMappingContext.class);
+      registry.registerBeanDefinition("ndbMappingContext", beanDefinition);
+    }
+    super.registerBeansForRoot(registry, configurationSource);
+  }
+
+  @Override
+  public void postProcess(BeanDefinitionBuilder builder, AnnotationRepositoryConfigurationSource config) {
+    builder.addAutowiredProperty("publisher");
+    builder.addAutowiredProperty("nucleoDB");
+    builder.addDependsOn("ndbMappingContext");
+
+    Optional<String> mqsConfig = config.getAttribute("mqsConfiguration");
+    if(mqsConfig.isPresent()){
+      builder.addPropertyValue("mqsConfiguration", mqsConfig.get());
+    }
+    Optional<String> readToTime = config.getAttribute("readToTime");
+    if(readToTime.isPresent()){
+      builder.addPropertyValue("readToTime", readToTime.get());
+    }
+    Optional<String> nodeFilterConnection = config.getAttribute("nodeFilterConnection");
+    if(nodeFilterConnection.isPresent()){
+      builder.addPropertyValue("nodeFilterConnection", nodeFilterConnection.get());
+    }
+    Optional<String> nodeFilterDataEntry = config.getAttribute("nodeFilterDataEntry");
+    if(nodeFilterDataEntry.isPresent()){
+      builder.addPropertyValue("nodeFilterDataEntry", nodeFilterDataEntry.get());
+    }
+    Optional<NucleoDB.DBType> dbType = config.getAttribute("dbType", NucleoDB.DBType.class);
+    if(dbType.isPresent()){
+      builder.addPropertyValue("dbType", dbType.get());
+    }
+    Optional<String[]> scanPackages = config.getAttribute("scanPackages", String[].class);
+    if(scanPackages.isPresent()){
+      builder.addPropertyValue("scanPackages", scanPackages.get());
+    }
+  }
+
+  @Override
+  protected Collection<Class<? extends Annotation>> getIdentifyingAnnotations() {
+    return Arrays.asList(Table.class, Conn.class);
+  }
+
+  @Override
+  protected Collection<Class<?>> getIdentifyingTypes() {
+    return Arrays.asList(NDBDataRepository.class, NDBConnRepository.class);
+  }
+
+
+  @Override
+  protected boolean useRepositoryConfiguration(RepositoryMetadata metadata) {
+    return !metadata.isReactiveRepository();
+  }
+}[./src/main/java/com/nucleodb/spring/config/EnableNDBRepositories.java]
+package com.nucleodb.spring.config;
+
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.mqs.config.MQSConfiguration;
+import com.nucleodb.library.mqs.config.MQSSettings;
+import com.nucleodb.library.mqs.kafka.KafkaConfiguration;
+import com.nucleodb.spring.NDBRepositoryFactoryBean;
+import org.springframework.context.annotation.Import;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import org.springframework.beans.factory.FactoryBean;
+import org.springframework.context.annotation.ComponentScan.Filter;
+import org.springframework.data.repository.config.DefaultRepositoryBaseClass;
+import org.springframework.data.repository.query.QueryLookupStrategy;
+import org.springframework.data.repository.query.QueryLookupStrategy.Key;
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Inherited
+@Import({NDBRepositoryRegistrar.class, NDBInstance.class})
+public @interface EnableNDBRepositories{
+  NucleoDB.DBType dbType() default NucleoDB.DBType.NO_LOCAL;
+
+  String mqsConfiguration() default "com.nucleodb.library.mqs.kafka.KafkaConfiguration";
+
+  String nodeFilterConnection() default "com.nucleodb.library.database.tables.connection.NodeFilter";
+  String nodeFilterDataEntry() default "com.nucleodb.library.database.tables.table.NodeFilter";
+
+  String readToTime() default "";
+
+  String[] scanPackages() default {"com.nucleocore.library.database.tables.connection"};
+  String[] value() default {};
+
+  /**
+   * Base packages to scan for annotated components. {@link #value()} is an alias for (and mutually exclusive with) this
+   * attribute. Use {@link #basePackageClasses()} for a type-safe alternative to String-based package names.
+   */
+  String[] basePackages() default "";
+
+  /**
+   * Type-safe alternative to {@link #basePackages()} for specifying the packages to scan for annotated components. The
+   * package of each class specified will be scanned. Consider creating a special no-op marker class or interface in
+   * each package that serves no purpose other than being referenced by this attribute.
+   */
+  Class<?>[] basePackageClasses() default {};
+
+  /**
+   * Specifies which types are eligible for component scanning. Further narrows the set of candidate components from
+   * everything in {@link #basePackages()} to everything in the base packages that matches the given filter or filters.
+   */
+  Filter[] includeFilters() default {};
+
+  /**
+   * Specifies which types are not eligible for component scanning.
+   */
+  Filter[] excludeFilters() default {};
+
+  /**
+   * Returns the postfix to be used when looking up custom repository implementations. Defaults to {@literal Impl}. So
+   * for a repository named {@code UserRepository} the corresponding implementation class will be looked up scanning for
+   * {@code UserRepositoryImpl}.
+   */
+  String repositoryImplementationPostfix() default "Impl";
+
+  /**
+   * Configures the location of where to find the Spring Data named queries properties file. Will default to
+   * {@code META-INF/cassandra-named-queries.properties}.
+   */
+  String namedQueriesLocation() default "";
+
+  /**
+   * Returns the key of the {@link QueryLookupStrategy} to be used for lookup queries for query methods. Defaults to
+   * {@link Key#CREATE_IF_NOT_FOUND}.
+   */
+  QueryLookupStrategy.Key queryLookupStrategy() default Key.CREATE_IF_NOT_FOUND;
+
+  /**
+   * Returns the {@link FactoryBean} class to be used for each repository instance. Defaults to
+   * {@link NDBRepositoryFactoryBean}.
+   */
+  Class<?> repositoryFactoryBeanClass() default NDBRepositoryFactoryBean.class;
+
+  /**
+   * Configure the repository base class to be used to create repository proxies for this particular configuration.
+   *
+   * @since 1.3
+   */
+  Class<?> repositoryBaseClass() default DefaultRepositoryBaseClass.class;
+
+  /**
+   * Configures whether nested repository-interfaces (e.g. defined as inner classes) should be discovered by the
+   * repositories infrastructure.
+   */
+  boolean considerNestedRepositories() default true;
+}
+[./src/main/java/com/nucleodb/spring/NDBRepositoryFactory.java]
+package com.nucleodb.spring;
+
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.spring.impl.NDBConnectionRepositoryImpl;
+import com.nucleodb.spring.impl.NDBDataEntryRepositoryImpl;
+import com.nucleodb.spring.mapping.NDBEntityInformationConnection;
+import com.nucleodb.spring.mapping.NDBEntityInformationDataEntry;
+import com.nucleodb.spring.query.exec.NDBDataEntryRepositoryQuery;
+import com.nucleodb.spring.types.NDBConnRepository;
+import com.nucleodb.spring.types.NDBDataRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mapping.context.AbstractMappingContext;
+import org.springframework.data.projection.ProjectionFactory;
+import org.springframework.data.repository.core.EntityInformation;
+import org.springframework.data.repository.core.NamedQueries;
+import org.springframework.data.repository.core.RepositoryInformation;
+import org.springframework.data.repository.core.RepositoryMetadata;
+import org.springframework.data.repository.core.support.RepositoryFactorySupport;
+import org.springframework.data.repository.query.QueryLookupStrategy;
+import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.RepositoryQuery;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeMap;
+
+public class NDBRepositoryFactory extends RepositoryFactorySupport{
+  private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
+
+  private final NucleoDB nucleoDB;
+
+  private final ApplicationEventPublisher publisher;
+
+  private final AbstractMappingContext mappingContext;
+
+  /**
+   * Create a new {@link NDBRepositoryFactory} with the given {@link NucleoDB}.
+   *
+   * @param nucleoDB       must not be {@literal null}
+   * @param mappingContext
+   */
+  public NDBRepositoryFactory(NucleoDB nucleoDB, ApplicationEventPublisher publisher, AbstractMappingContext<?, ?> mappingContext) {
+
+    Assert.notNull(nucleoDB, "NucleoDB must not be null");
+
+    this.nucleoDB = nucleoDB;
+    this.publisher = publisher;
+    this.mappingContext = mappingContext;
+
+  }
+
+
+  @Override
+  public <T, ID> EntityInformation<T, ID> getEntityInformation(Class<T> domainClass) {
+    if(DataEntry.class.isAssignableFrom(domainClass)) {
+      return new NDBEntityInformationDataEntry(domainClass);
+    }else if(Connection.class.isAssignableFrom(domainClass)) {
+      return new NDBEntityInformationConnection(domainClass);
+    }
+    return null;
+  }
+
+  @Override
+  protected Object getTargetRepository(RepositoryInformation repositoryInformation) {
+    return getTargetRepositoryViaReflection(repositoryInformation, nucleoDB, repositoryInformation.getDomainType(), publisher);
+  }
+
+  @Override
+  protected Class<?> getRepositoryBaseClass(RepositoryMetadata metadata) {
+    if(NDBDataRepository.class.isAssignableFrom(metadata.getRepositoryInterface())){
+      return NDBDataEntryRepositoryImpl.class;
+    }else if(NDBConnRepository.class.isAssignableFrom(metadata.getRepositoryInterface())){
+      return NDBConnectionRepositoryImpl.class;
+    }
+    return null;
+  }
+
+
+  @Override
+  protected Optional<QueryLookupStrategy> getQueryLookupStrategy(
+      @Nullable QueryLookupStrategy.Key key,
+      QueryMethodEvaluationContextProvider evaluationContextProvider
+  ) {
+    return Optional.of(new NDBQueryLookupStrategy(nucleoDB, evaluationContextProvider));
+  }
+
+  private static class NDBQueryLookupStrategy implements QueryLookupStrategy {
+
+    private final QueryMethodEvaluationContextProvider evaluationContextProvider;
+    private final NucleoDB nucleoDB;
+
+    NDBQueryLookupStrategy(NucleoDB nucleoDB, QueryMethodEvaluationContextProvider evaluationContextProvider) {
+      this.nucleoDB = nucleoDB;
+      this.evaluationContextProvider = evaluationContextProvider;
+    }
+
+    private static Map<String, RepositoryQuery> cachedHandlers = new TreeMap<>();
+
+    private RepositoryQuery getOrCreateRepositoryQueryHandler(Method method, RepositoryMetadata metadata){
+      RepositoryQuery repositoryQuery = cachedHandlers.get(metadata.getRepositoryInterface().getName() + "." + method.getName());
+      if(repositoryQuery!=null){
+        return repositoryQuery;
+      }
+      if(NDBDataRepository.class.isAssignableFrom(metadata.getRepositoryInterface())) {
+        repositoryQuery = new NDBDataEntryRepositoryQuery(this.nucleoDB, metadata.getDomainType(), method);
+      }else if(NDBConnRepository.class.isAssignableFrom(metadata.getRepositoryInterface())){
+        return null;// need to implement
+      }
+      cachedHandlers.put(metadata.getRepositoryInterface().getName() + "." + method.getName(), repositoryQuery);
+      return repositoryQuery;
+    }
+
+    @Override
+    public RepositoryQuery resolveQuery(
+        Method method,
+        RepositoryMetadata metadata,
+        ProjectionFactory factory,
+        NamedQueries namedQueries
+    ) {
+      return getOrCreateRepositoryQueryHandler(method, metadata);
+    }
+  }
+
+}[./src/main/java/com/nucleodb/spring/NDBConfiguration.java]
+package com.nucleodb.spring;
+
+public class NDBConfiguration{
+  String[] packages;
+
+  public NDBConfiguration(String... packages) {
+    this.packages = packages;
+  }
+
+  public String[] getPackages() {
+    return packages;
+  }
+
+  public void setPackages(String[] packages) {
+    this.packages = packages;
+  }
+}
+[./src/main/java/com/nucleodb/spring/ParsingUtils.java]
+/*
+ * Copyright 2013-2023 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.nucleodb.spring;
+
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.support.AbstractBeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionBuilder;
+import org.springframework.beans.factory.xml.ParserContext;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
+import org.w3c.dom.Attr;
+import org.w3c.dom.Element;
+
+/**
+ * Utility class for parsing Cassandra XML namespace configuration meta-data.
+ *
+ * @author John Blum
+ * @author Mark Paluch
+ */
+public abstract class ParsingUtils {
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addOptionalPropertyReference(BeanDefinitionBuilder builder, String propertyName, Attr attribute,
+			String defaultValue) {
+
+		addProperty(builder, propertyName, attribute.getValue(), defaultValue, false, true);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addOptionalPropertyReference(BeanDefinitionBuilder builder, String propertyName, Element element,
+			String attributeName) {
+
+		addProperty(builder, propertyName, element.getAttribute(attributeName), null, false, true);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addOptionalPropertyReference(BeanDefinitionBuilder builder, String propertyName, Element element,
+			String attributeName, String defaultValue) {
+
+		addProperty(builder, propertyName, element.getAttribute(attributeName), defaultValue, false, true);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addOptionalPropertyValue(BeanDefinitionBuilder builder, String propertyName, Attr attribute,
+			String defaultValue) {
+
+		addProperty(builder, propertyName, attribute.getValue(), defaultValue, false, false);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addOptionalPropertyValue(BeanDefinitionBuilder builder, String propertyName, Element element,
+			String attributeName) {
+
+		addProperty(builder, propertyName, element.getAttribute(attributeName), null, false, false);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addOptionalPropertyValue(BeanDefinitionBuilder builder, String propertyName, Element element,
+			String attributeName, @Nullable String defaultValue) {
+
+		addProperty(builder, propertyName, element.getAttribute(attributeName), defaultValue, false, false);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addRequiredPropertyReference(BeanDefinitionBuilder builder, String propertyName, Element element,
+			String attributeName) {
+
+		addProperty(builder, propertyName, element.getAttribute(attributeName), null, true, true);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addRequiredPropertyReference(BeanDefinitionBuilder builder, String propertyName, String value) {
+
+		addProperty(builder, propertyName, value, null, true, true);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addRequiredPropertyValue(BeanDefinitionBuilder builder, String propertyName, Attr attribute) {
+
+		addProperty(builder, propertyName, attribute.getValue(), null, true, false);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addRequiredPropertyValue(BeanDefinitionBuilder builder, String propertyName, Element element,
+			String attributeName) {
+
+		addProperty(builder, propertyName, element.getAttribute(attributeName), null, true, false);
+	}
+
+	/**
+	 * Convenience method delegating to
+	 * {@link #addProperty(BeanDefinitionBuilder, String, String, String, boolean, boolean)}.
+	 */
+	public static void addRequiredPropertyValue(BeanDefinitionBuilder builder, String propertyName, String value) {
+
+		addProperty(builder, propertyName, value, null, true, false);
+	}
+
+	/**
+	 * Adds the named property and value, or reference to the given {@link BeanDefinitionBuilder} with an optional default
+	 * value if the value has not been specified.
+	 * <p>
+	 * If {@code required} is <code>false</code>, <code>value</code> is null or empty, and {@code defaultValue} is null or
+	 * empty, then no property is added to the bean definition and this method silently returns.
+	 *
+	 * @param builder {@link BeanDefinitionBuilder} used to build the {@link BeanDefinition}.
+	 * @param propertyName name of the property to add.
+	 * @param value value for the property being added.
+	 * @param defaultValue default value for the property if value is null or empty.
+	 * @param required If {@code true}, then <code>value</code> must not be null or empty. If <code>false</code>, then
+	 *          {@code value} may be null and the <code>defaultValue</code> will be used. If <code>required</code> is
+	 *          {@code false}, <code>value</code> is null or empty, and <code>defaultValue</code> is null or empty, then
+	 *          no property is added to the bean definition and this method silently returns.
+	 * @param reference If {@code true}, then the <code>value</code>value for the named property is considered a reference
+	 *          to another bean in the Spring context.
+	 * @return the given {@link BeanDefinitionBuilder}.
+	 * @throws IllegalArgumentException if either the {@link BeanDefinitionBuilder} is null or the {@code propertyName}
+	 *           has not been specified.
+	 * @see BeanDefinitionBuilder#addPropertyReference(String, String)
+	 * @see BeanDefinitionBuilder#addPropertyValue(String, Object)
+	 */
+	public static BeanDefinitionBuilder addProperty(BeanDefinitionBuilder builder, String propertyName, String value,
+			@Nullable String defaultValue, boolean required, boolean reference) {
+
+		Assert.notNull(builder, "BeanDefinitionBuilder must not be null");
+		Assert.hasText(propertyName, "Property name must not be null");
+
+		if (!StringUtils.hasText(value)) {
+			if (required) {
+				throw new IllegalArgumentException(String.format("value required for property %1$s[%2$s] on class [%3$s]",
+						reference ? "reference " : "", propertyName, builder.getRawBeanDefinition().getBeanClassName()));
+			} else {
+				value = defaultValue;
+			}
+		}
+
+		if (StringUtils.hasText(value)) {
+			if (reference) {
+				builder.addPropertyReference(propertyName, value);
+			} else {
+				builder.addPropertyValue(propertyName, value);
+			}
+		}
+
+		return builder;
+	}
+
+	/**
+	 * Returns a {@link BeanDefinition} built from the given {@link BeanDefinitionBuilder} enriched with source meta-data
+	 * derived from the given {@link Element}.
+	 *
+	 * @param builder {@link BeanDefinitionBuilder} used to build the {@link BeanDefinition}.
+	 * @param parserContext {@link ParserContext} used to track state during the parsing operation.
+	 * @param element DOM {@link Element} defining the meta-data that is the source of the {@link BeanDefinition}s
+	 *          configuration.
+	 * @return the {@link BeanDefinition} built by the given {@link BeanDefinitionBuilder}.
+	 * @throws IllegalArgumentException if the {@link BeanDefinitionBuilder} or {@link ParserContext} are null.
+	 */
+	public static AbstractBeanDefinition getSourceBeanDefinition(BeanDefinitionBuilder builder,
+			ParserContext parserContext, Element element) {
+
+		Assert.notNull(parserContext, "ParserContext must not be null");
+
+		return getSourceBeanDefinition(builder, parserContext.extractSource(element));
+	}
+
+	/**
+	 * Returns a {@link AbstractBeanDefinition} built from the given {@link BeanDefinitionBuilder} with the given
+	 * extracted source applied.
+	 *
+	 * @param builder {@link BeanDefinitionBuilder} used to build the {@link BeanDefinition}.
+	 * @param source source meta-data used by the builder to construct the {@link BeanDefinition}.
+	 * @return a raw {@link BeanDefinition} built by the given {@link BeanDefinitionBuilder}.
+	 * @throws IllegalArgumentException if {@link BeanDefinitionBuilder} is null.
+	 */
+	public static AbstractBeanDefinition getSourceBeanDefinition(BeanDefinitionBuilder builder, Object source) {
+
+		Assert.notNull(builder, "BeanDefinitionBuilder must not be null");
+
+		AbstractBeanDefinition beanDefinition = builder.getBeanDefinition();
+
+		beanDefinition.setSource(source);
+
+		return beanDefinition;
+	}
+}[./src/main/java/com/nucleodb/spring/events/ConnectionCreatedEvent.java]
+package com.nucleodb.spring.events;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.ResolvableTypeProvider;
+
+public class ConnectionCreatedEvent<T extends Connection> implements ResolvableTypeProvider{
+  private T connection;
+
+  public ConnectionCreatedEvent(T connection) {
+    this.connection = connection;
+  }
+
+  public T getConnection() {
+    return connection;
+  }
+
+  public void setConnection(T connection) {
+    this.connection = connection;
+  }
+
+  @Override
+  public ResolvableType getResolvableType() {
+    return ResolvableType.forClassWithGenerics(
+        getClass(),
+        ResolvableType.forInstance(this.connection)
+    );
+  }
+}
+[./src/main/java/com/nucleodb/spring/events/ConnectionDeletedEvent.java]
+package com.nucleodb.spring.events;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.ResolvableTypeProvider;
+
+public class ConnectionDeletedEvent<T extends Connection> implements ResolvableTypeProvider{
+  private T connection;
+
+  public ConnectionDeletedEvent(T connection) {
+    this.connection = connection;
+  }
+
+  public T getConnection() {
+    return connection;
+  }
+
+  public void setConnection(T connection) {
+    this.connection = connection;
+  }
+
+  @Override
+  public ResolvableType getResolvableType() {
+    return ResolvableType.forClassWithGenerics(
+        getClass(),
+        ResolvableType.forInstance(this.connection)
+    );
+  }
+}
+[./src/main/java/com/nucleodb/spring/events/ConnectionUpdatedEvent.java]
+package com.nucleodb.spring.events;
+
+import com.nucleodb.library.database.tables.connection.Connection;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.ResolvableTypeProvider;
+
+public class ConnectionUpdatedEvent<T extends Connection> implements ResolvableTypeProvider{
+  private T connection;
+
+  public ConnectionUpdatedEvent(T connection) {
+    this.connection = connection;
+  }
+
+  public T getConnection() {
+    return connection;
+  }
+
+  public void setConnection(T connection) {
+    this.connection = connection;
+  }
+
+  @Override
+  public ResolvableType getResolvableType() {
+    return ResolvableType.forClassWithGenerics(
+        getClass(),
+        ResolvableType.forInstance(this.connection)
+    );
+  }
+}[./src/main/java/com/nucleodb/spring/events/DataEntryDeletedEvent.java]
+package com.nucleodb.spring.events;
+
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.ResolvableTypeProvider;
+
+public class DataEntryDeletedEvent<T extends DataEntry> implements ResolvableTypeProvider{
+  private T dataEntry;
+
+  public DataEntryDeletedEvent(T dataEntry) {
+    this.dataEntry = dataEntry;
+  }
+
+  public T getDataEntry() {
+    return dataEntry;
+  }
+
+  public void setDataEntry(T dataEntry) {
+    this.dataEntry = dataEntry;
+  }
+  @Override
+  public ResolvableType getResolvableType() {
+    return ResolvableType.forClassWithGenerics(
+        getClass(),
+        ResolvableType.forInstance(this.dataEntry)
+    );
+  }
+}[./src/main/java/com/nucleodb/spring/events/DataEntryCreatedEvent.java]
+package com.nucleodb.spring.events;
+
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.ResolvableTypeProvider;
+
+public class DataEntryCreatedEvent<T extends DataEntry> implements ResolvableTypeProvider{
+  private T dataEntry;
+
+  public DataEntryCreatedEvent(T dataEntry) {
+    this.dataEntry = dataEntry;
+  }
+
+  public T getDataEntry() {
+    return dataEntry;
+  }
+
+  public void setDataEntry(T dataEntry) {
+    this.dataEntry = dataEntry;
+  }
+
+  @Override
+  public ResolvableType getResolvableType() {
+    return ResolvableType.forClassWithGenerics(
+        getClass(),
+        ResolvableType.forInstance(this.dataEntry)
+    );
+  }
+}
+[./src/main/java/com/nucleodb/spring/events/DataEntryUpdatedEvent.java]
+package com.nucleodb.spring.events;
+
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.ResolvableTypeProvider;
+
+public class DataEntryUpdatedEvent<T extends DataEntry> implements ResolvableTypeProvider{
+  private T dataEntry;
+
+  public DataEntryUpdatedEvent(T dataEntry) {
+    this.dataEntry = dataEntry;
+  }
+
+  public T getDataEntry() {
+    return dataEntry;
+  }
+
+  public void setDataEntry(T dataEntry) {
+    this.dataEntry = dataEntry;
+  }
+  @Override
+  public ResolvableType getResolvableType() {
+    return ResolvableType.forClassWithGenerics(
+        getClass(),
+        ResolvableType.forInstance(this.dataEntry)
+    );
+  }
+}
+[./src/main/java/com/nucleodb/spring/query/MappingNDBEntityInformation.java]
+package com.nucleodb.spring.query;
+
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.data.mapping.PersistentEntity;
+import org.springframework.data.mapping.PersistentProperty;
+import org.springframework.data.repository.core.support.PersistentEntityInformation;
+
+public class MappingNDBEntityInformation<T extends DataEntry, ID> extends PersistentEntityInformation<T, ID> implements NDBEntityMetadata<T, ID> {
+
+  public MappingNDBEntityInformation(PersistentEntity<T, ? extends PersistentProperty<?>> persistentEntity) {
+    super(persistentEntity);
+  }
+}
+		[./src/main/java/com/nucleodb/spring/query/common/ConditionOperation.java]
+package com.nucleodb.spring.query.common;
+
+import java.io.Serializable;
+
+public class ConditionOperation implements Serializable, Operation{
+  String conditional;
+  Operation next;
+
+  public ConditionOperation(String conditional, Operation next) {
+    this.conditional = conditional;
+    this.next = next;
+  }
+
+  public String getConditional() {
+    return conditional;
+  }
+
+  public void setConditional(String conditional) {
+    this.conditional = conditional;
+  }
+
+  public Operation getNext() {
+    return next;
+  }
+
+  public void setNext(Operation next) {
+    this.next = next;
+  }
+}[./src/main/java/com/nucleodb/spring/query/common/OperatorProperty.java]
+package com.nucleodb.spring.query.common;
+
+import java.io.Serializable;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.nucleodb.spring.query.ParserConstants.conditional;
+import static com.nucleodb.spring.query.ParserConstants.propertyNotExpression;
+import static com.nucleodb.spring.query.ParserConstants.propertyNotRegexPattern;
+
+public class OperatorProperty implements Serializable {
+    String expression = "=";
+    String propertyName;
+    boolean not;
+
+    public OperatorProperty(String propertyName) {
+      not = propertyName.matches(propertyNotExpression);
+
+      for (Map.Entry<String, String[]> stringEntry : conditional.entrySet()) {
+
+        Pattern regexPattern = Pattern.compile(stringEntry.getKey());
+        Matcher matcher = regexPattern.matcher(propertyName);
+        if(matcher.find()) {
+          if(not) {
+            Matcher matcherNot = propertyNotRegexPattern.matcher(propertyName);
+            if(matcherNot.find())
+              propertyName = matcherNot.group(1);
+          }else {
+            propertyName = matcher.group(1);
+          }
+          expression = stringEntry.getValue()[0];
+          break;
+        }
+      }
+      this.propertyName = propertyName;
+
+    }
+
+    public boolean isNot() {
+      return not;
+    }
+
+    public void setNot(boolean not) {
+      this.not = not;
+    }
+
+    public String getExpression() {
+      return expression;
+    }
+
+    public void setExpression(String expression) {
+      this.expression = expression;
+    }
+
+    public String getPropertyName() {
+      return propertyName;
+    }
+
+    public void setPropertyName(String propertyName) {
+      this.propertyName = propertyName;
+    }
+}[./src/main/java/com/nucleodb/spring/query/common/Operation.java]
+package com.nucleodb.spring.query.common;
+
+public interface Operation{
+  Operation getNext();
+}
+[./src/main/java/com/nucleodb/spring/query/common/QueryOperation.java]
+package com.nucleodb.spring.query.common;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import java.io.Serializable;
+import java.lang.reflect.Type;
+
+public class QueryOperation implements Serializable, Operation{
+  String method;
+  Operation next;
+
+  transient Type returnType;
+
+  public QueryOperation() {
+  }
+
+  public QueryOperation(String method, Operation next) {
+    this.method = method;
+    this.next = next;
+  }
+
+  public String getMethod() {
+    return method;
+  }
+
+  public void setMethod(String method) {
+    this.method = method;
+  }
+
+  @Override
+  public Operation getNext() {
+    return next;
+  }
+
+  public void setNext(Operation next) {
+    this.next = next;
+  }
+
+  @JsonIgnore
+  public Type getReturnType() {
+    return returnType;
+  }
+
+  public void setReturnType(Type returnType) {
+    this.returnType = returnType;
+  }
+}
+[./src/main/java/com/nucleodb/spring/query/common/LookupOperation.java]
+package com.nucleodb.spring.query.common;
+
+public class LookupOperation implements Operation{
+  OperatorProperty property;
+  Operation next = null;
+
+  public LookupOperation(OperatorProperty property, Operation next) {
+    this.property = property;
+    this.next = next;
+  }
+
+  public LookupOperation(OperatorProperty property) {
+    this.property = property;
+  }
+
+  @Override
+  public Operation getNext() {
+    return next;
+  }
+
+  public OperatorProperty getProperty() {
+    return property;
+  }
+
+  public void setProperty(OperatorProperty property) {
+    this.property = property;
+  }
+
+  public void setNext(Operation next) {
+    this.next = next;
+  }
+}
+[./src/main/java/com/nucleodb/spring/query/NDBEntityMetadata.java]
+package com.nucleodb.spring.query;
+
+import com.nucleodb.library.database.tables.table.DataEntry;
+import org.springframework.data.repository.core.EntityInformation;
+import org.springframework.data.repository.core.EntityMetadata;
+
+public interface NDBEntityMetadata<T extends DataEntry, ID> extends EntityInformation<T, ID>, EntityMetadata<T>{
+  @Override
+  default ID getId(T entity) {
+    return (ID) entity.getKey();
+  }
+}[./src/main/java/com/nucleodb/spring/query/QueryParser.java]
+package com.nucleodb.spring.query;
+
+import com.nucleodb.spring.query.common.ConditionOperation;
+import com.nucleodb.spring.query.common.LookupOperation;
+import com.nucleodb.spring.query.common.OperatorProperty;
+import com.nucleodb.spring.query.common.Operation;
+import com.nucleodb.spring.query.common.QueryOperation;
+
+import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.nucleodb.spring.query.ParserConstants.operator;
+import static com.nucleodb.spring.query.ParserConstants.prefix;
+
+public class QueryParser {
+  private static Operation recursive(String stringMatch){
+    for (Map.Entry<String, String[]> stringEntry : operator.entrySet()) {
+      String regexMatch = stringEntry.getKey();
+      Pattern regexPattern = Pattern.compile(regexMatch);
+      Matcher matcher = regexPattern.matcher(stringMatch);
+      while(matcher.find()) {
+        stringMatch = stringMatch.replace(matcher.group(0), "");
+        return new LookupOperation(new OperatorProperty(stringMatch), new ConditionOperation(stringEntry.getValue()[0], recursive(matcher.group(1))));
+      }
+    }
+    // handle expressions
+    return new LookupOperation(new OperatorProperty(stringMatch));
+  }
+
+  public static QueryOperation parse(Method method){
+    String stringMatch = method.getName();
+    for (Map.Entry<String, String[]> entry : prefix.entrySet()) {
+      String regexMatch = entry.getKey();
+      if (!stringMatch.matches(regexMatch))
+        continue;
+      Pattern regexPattern = Pattern.compile(regexMatch);
+      Matcher matcher = regexPattern.matcher(stringMatch);
+      QueryOperation queryOperation = new QueryOperation();
+      if (matcher.find()) {
+        queryOperation.setMethod(entry.getValue()[0]);
+        for (int i = 1; i < entry.getValue().length; i++) {
+          if ("operations".equals(entry.getValue()[i])) {
+            queryOperation.setNext(recursive(matcher.group(i)));
+          }
+        }
+      }
+      queryOperation.setReturnType(method.getGenericReturnType());
+      return queryOperation;
+    }
+    return null;
+  }
+}
+[./src/main/java/com/nucleodb/spring/query/exec/NDBDataEntryRepositoryQuery.java]
+package com.nucleodb.spring.query.exec;
+
+import com.google.common.collect.Collections2;
+import com.google.common.collect.Lists;
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.index.IndexWrapper;
+import com.nucleodb.library.database.index.TreeIndex;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.library.database.tables.table.DataEntryProjection;
+import com.nucleodb.library.database.tables.table.DataTable;
+import com.nucleodb.library.database.utils.Pagination;
+import com.nucleodb.library.database.utils.Serializer;
+import com.nucleodb.library.database.utils.exceptions.InvalidIndexTypeException;
+import com.nucleodb.library.database.utils.exceptions.ObjectNotSavedException;
+import com.nucleodb.spring.query.QueryParser;
+import com.nucleodb.spring.query.common.ConditionOperation;
+import com.nucleodb.spring.query.common.LookupOperation;
+import com.nucleodb.spring.query.common.Operation;
+import com.nucleodb.spring.query.common.OperatorProperty;
+import com.nucleodb.spring.query.common.QueryOperation;
+import org.springframework.data.repository.query.QueryMethod;
+import org.springframework.data.repository.query.RepositoryQuery;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public class NDBDataEntryRepositoryQuery implements RepositoryQuery{
+  private final Class classType;
+  private final Method method;
+  private Class<?> tableClass;
+  private DataTable table;
+
+  public NDBDataEntryRepositoryQuery(NucleoDB nucleoDB, Class classType, Method method) {
+    this.classType = classType;
+    Type[] actualTypeArguments = ((ParameterizedType) classType.getGenericSuperclass()).getActualTypeArguments();
+    if (actualTypeArguments.length == 1) {
+      this.tableClass = (Class<?>) actualTypeArguments[0];
+      this.table = nucleoDB.getTable(this.tableClass);
+    }
+    this.method = method;
+  }
+
+  @Override
+  public Object execute(Object[] parameters) {
+    QueryOperation query = QueryParser.parse(method);
+    Operation tmp = query;
+    String currentConditional = null;
+    Set<DataEntry> entries = null;
+    Optional<Object> first = Arrays.stream(parameters).filter(o -> o instanceof DataEntryProjection).findFirst();
+    DataEntryProjection dataEntryProjection = new DataEntryProjection(new Pagination(0, Integer.MAX_VALUE));
+    dataEntryProjection.setWritable(false);
+    if(first.isPresent()){
+      dataEntryProjection = (DataEntryProjection) first.get();
+    }
+
+    int i = 0;
+    while ((tmp = tmp.getNext()) != null) {
+      if (tmp instanceof ConditionOperation) {
+        currentConditional = ((ConditionOperation) tmp).getConditional();
+      } else if (tmp instanceof LookupOperation) {
+        OperatorProperty property = ((LookupOperation) tmp).getProperty();
+        String indexKey = property.getPropertyName().replaceAll("_", ".").toLowerCase();
+        if (indexKey.equals("key")) {
+          indexKey = "id";
+        }
+        if (!indexKey.equals("id") && !table.getIndexes().keySet().contains(indexKey)) {
+          return null; // do not handle non indexed properties
+        }
+        Set<DataEntry> lookupEntries = null;
+        try {
+          switch (property.getExpression()) {
+            case "=" -> {
+              lookupEntries = table.get(indexKey, parameters[i], dataEntryProjection);
+            }
+            case ">", "]" -> {
+              lookupEntries = table.greaterThan(indexKey, parameters[i], dataEntryProjection);
+            }
+            case "<", "[" -> {
+              lookupEntries = table.lessThan(indexKey, parameters[i], dataEntryProjection);
+            }
+            case "contains" -> {
+              lookupEntries = table.search(indexKey, parameters[i], dataEntryProjection);
+            }
+            case "s%" -> {
+              lookupEntries = table.startsWith(indexKey, (String) parameters[i], dataEntryProjection);
+            }
+            case "%s" -> {
+              lookupEntries = table.endsWith(indexKey, (String) parameters[i], dataEntryProjection);
+            }
+          }
+        } catch (InvalidIndexTypeException e) {
+          throw new RuntimeException(e);
+        }
+        i++;
+        if (lookupEntries == null)
+          continue;
+        if (currentConditional != null) {
+          switch (currentConditional) {
+            case "AND" -> {
+              assert entries != null;
+              entries.retainAll(lookupEntries);
+            }
+            case "OR" -> {
+              assert entries != null;
+              entries.addAll(lookupEntries);
+            }
+          }
+          currentConditional = null;
+        } else {
+          entries = lookupEntries;
+        }
+      }
+    }
+    if(query.getMethod().equals("findBy")){
+      Stream<DataEntry> dataEntryStream = entries.stream();
+      if(Collection.class.isAssignableFrom(method.getReturnType())) {
+        method.getReturnType();
+        Type[] actualTypeArguments = ((ParameterizedType) method.getGenericReturnType()).getActualTypeArguments();
+        Class<?> returnClass = DataEntry.class;
+        if (actualTypeArguments.length == 1) {
+          returnClass = (Class<?>) actualTypeArguments[0];
+        }
+        if (method.getReturnType() == List.class) {
+          if(DataEntry.class.isAssignableFrom(returnClass)){
+            return dataEntryStream.collect(Collectors.toList());
+          }else{
+            if(entries.size()>0){
+              Object data = dataEntryStream.findFirst().get().getData();
+              if(data.getClass()==returnClass){
+                return dataEntryStream.map(e->e.getData()).collect(Collectors.toList());
+              }
+            }
+          }
+        }else if (method.getReturnType() == Set.class) {
+          if(DataEntry.class.isAssignableFrom(returnClass)){
+            return dataEntryStream.collect(Collectors.toSet());
+          }else{
+            if(entries.size()>0){
+              Object data = dataEntryStream.findFirst().get().getData();
+              if(data.getClass()==returnClass){
+                return dataEntryStream.map(e->e.getData()).collect(Collectors.toSet());
+              }
+            }
+          }
+        }
+      }else if(DataEntry.class.isAssignableFrom(method.getReturnType())){
+        return dataEntryStream.findFirst();
+      }else{
+        if(entries.size()>0) {
+          Object data = dataEntryStream.findFirst().get().getData();
+          if(data.getClass() == method.getReturnType()){
+            return data;
+          }
+        }
+      }
+    }else if(query.getMethod().equals("streamBy")){
+      return entries.stream();
+    }else if(query.getMethod().equals("deleteBy")){
+      CountDownLatch countDownLatch = new CountDownLatch(entries.size());
+      entries.stream().map(de -> {
+          try {
+              return de.copy(table.getConfig().getDataEntryClass(), true);
+          } catch (ObjectNotSavedException e) {
+              throw new RuntimeException(e);
+          }
+      }).forEach(e->{
+        table.deleteAsync(e, (dataEntry)->{
+          countDownLatch.countDown();
+        });
+      });
+      try {
+        countDownLatch.await(5, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    }else if(query.getMethod().equals("countBy")){
+      return entries.size();
+    }else if(query.getMethod().equals("existsBy")){
+      return entries.size()>0;
+    }
+
+    return null;
+  }
+
+  @Override
+  public QueryMethod getQueryMethod() {
+    return null;
+  }
+}
+[./src/main/java/com/nucleodb/spring/query/ParserConstants.java]
+package com.nucleodb.spring.query;
+
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.regex.Pattern;
+
+public class ParserConstants{
+  static String propertyMatch = "([a-z_A-Z0-9]+)";
+  static String propertyMatchOrBlank = "([a-z_A-Z0-9]+|)";
+  public static Map<String, String[]> prefix = new TreeMap<>(){
+    @Override
+    public String[] put(String key, String[] value) {
+      return super.put(createRegexString(key), value);
+    }
+    {
+      put("find|By$", new String[]{"findBy", "returnObject", "operations"});
+      put("read|By$", new String[]{"findBy", "returnObject", "operations"});
+      put("query|By$", new String[]{"findBy", "returnObject", "operations"});
+      put("get|By$", new String[]{"findBy", "returnObject", "operations"});
+      put("stream|By$", new String[]{"streamBy", "returnObject", "operations"});
+      put("search|By$", new String[]{"findBy", "returnObject", "operations"});
+      put("count|By$", new String[]{"countBy", "returnObject", "operations"});
+      put("exists|By$", new String[]{"existsBy", "returnObject", "operations"});
+      put("deleteBy$", new String[]{"deleteBy", "operations"});
+      put("removeBy$", new String[]{"deleteBy", "operations"});
+    }};
+  public static Map<String, String[]> operator = new TreeMap<>(){
+    @Override
+    public String[] put(String key, String[] value) {
+      return super.put(createRegexString(key), value);
+    }
+    {
+      put("OrderBy$", new String[]{"ORDERBY", "property"});
+      put("Or$", new String[]{"OR", "property"});
+      put("And$", new String[]{"AND", "", "property"});
+    }};
+
+  public static String propertyNotExpression = "([a-z_A-Z0-9]+)Not([a-z_A-Z0-9]+)";
+  public static Pattern propertyNotRegexPattern = Pattern.compile(propertyNotExpression);
+
+  public static Map<String, String[]> conditional = new TreeMap<>(){
+    @Override
+    public String[] put(String key, String[] value) {
+      return super.put(createRegexString(key), value);
+    }
+    {
+      put("$GreaterThan", new String[]{">"}); // implemented
+      put("$LessThan", new String[]{"<"}); // implemented
+      put("$Between", new String[]{"<>"});
+      put("$Before", new String[]{"["}); // implemented
+      put("$After", new String[]{"]"}); // implemented
+      put("$IsNull", new String[]{"=n"});
+      put("$IsNotNull", new String[]{"!=n"});
+      put("$Like", new String[]{"Like"});
+      put("$NotLike", new String[]{"NotLike"});
+      put("$StartingWith", new String[]{"s%"}); // implemented
+      put("$EndingWith", new String[]{"%s"}); // implemented
+      put("$Containing", new String[]{"contains"}); // implemented
+      put("$In", new String[]{"In"});
+      put("$True", new String[]{"true"});
+      put("$False", new String[]{"false"});
+      put("$IgnoreCase", new String[]{"ignoreCase"});
+      put("$Empty", new String[]{"empty"});
+    }};
+
+  static String createRegexString(String template){
+    return template.replace("|", propertyMatchOrBlank)
+        .replace("$", propertyMatch);
+  }
+}
+[./src/main/java/com/nucleodb/spring/NDBRepositoryFactoryBean.java]
+package com.nucleodb.spring;
+
+import com.google.common.collect.Sets;
+import com.nucleodb.library.NucleoDB;
+import com.nucleodb.library.database.modifications.ConnectionCreate;
+import com.nucleodb.library.database.modifications.ConnectionDelete;
+import com.nucleodb.library.database.modifications.ConnectionUpdate;
+import com.nucleodb.library.database.modifications.Create;
+import com.nucleodb.library.database.modifications.Delete;
+import com.nucleodb.library.database.modifications.Update;
+import com.nucleodb.library.database.tables.connection.Connection;
+import com.nucleodb.library.database.tables.connection.NodeFilter;
+import com.nucleodb.library.database.tables.table.DataEntry;
+import com.nucleodb.library.database.utils.exceptions.IncorrectDataEntryClassException;
+import com.nucleodb.library.database.utils.exceptions.MissingDataEntryConstructorsException;
+import com.nucleodb.library.event.ConnectionEventListener;
+import com.nucleodb.library.event.DataTableEventListener;
+import com.nucleodb.library.mqs.config.MQSConfiguration;
+import com.nucleodb.spring.events.ConnectionCreatedEvent;
+import com.nucleodb.spring.events.ConnectionDeletedEvent;
+import com.nucleodb.spring.events.ConnectionUpdatedEvent;
+import com.nucleodb.spring.events.DataEntryCreatedEvent;
+import com.nucleodb.spring.events.DataEntryDeletedEvent;
+import com.nucleodb.spring.events.DataEntryUpdatedEvent;
+import com.nucleodb.spring.mapping.NDBMappingContext;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mapping.PersistentEntity;
+import org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport;
+import org.springframework.data.repository.core.support.RepositoryFactorySupport;
+import org.springframework.data.repository.Repository;
+import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+
+import java.beans.IntrospectionException;
+import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+
+public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
+        extends RepositoryFactoryBeanSupport<T, S, ID> {
+
+    private @NonNull String[] scanPackages;
+    private @NonNull String mqsConfiguration;
+    private @NonNull String nodeFilterConnection;
+    private @NonNull String nodeFilterDataEntry;
+    private @NonNull String readToTime;
+    private @NonNull NucleoDB.DBType dbType;
+    private @NonNull NDBMappingContext ndbMappingContext;
+
+    private ApplicationEventPublisher publisher;
+
+    private static @Nullable NucleoDB nucleoDB = null;
+
+
+    /**
+     * Creates a new {@link RepositoryFactoryBeanSupport} for the given repository interface.
+     *
+     * @param repositoryInterface must not be {@literal null}.
+     */
+    protected NDBRepositoryFactoryBean(Class<? extends T> repositoryInterface, NDBMappingContext ndbMappingContext) {
+        super(repositoryInterface);
+        this.ndbMappingContext = ndbMappingContext;
+    }
+
+    static Map<String, String> getenv = System.getenv();
+
+
+    @Override
+    protected RepositoryFactorySupport createRepositoryFactory() {
+        try {
+            MQSConfiguration mqsConfigurationInstance = (MQSConfiguration) Class.forName(mqsConfiguration).getDeclaredConstructor().newInstance();
+
+            NodeFilter connectionNodeFilter = (NodeFilter) Class.forName(nodeFilterConnection).getDeclaredConstructor().newInstance();
+            com.nucleodb.library.database.tables.table.NodeFilter dataEntryNodeFilter = (com.nucleodb.library.database.tables.table.NodeFilter) Class.forName(nodeFilterDataEntry).getDeclaredConstructor().newInstance();
+
+            boolean jsonExport = Boolean.valueOf(getenv.getOrDefault("NDB_TOPIC_EXPORT", "false"));
+            boolean storeState = Boolean.valueOf(getenv.getOrDefault("NDB_STORE_STATE", "false"));
+            boolean loadState = Boolean.valueOf(getenv.getOrDefault("NDB_LOAD_STATE", "false"));
+            String saveDirectory = Path.of(getenv.getOrDefault("NDB_SAVE_DIR", "/data")).toAbsolutePath().toString();
+            ConnectionEventListener connectionEventListener = connectionEventListener();
+            DataTableEventListener dataTableEventListener = dataTableEventListener();
+            nucleoDB.startLockManager(c -> {
+                c.setMqsConfiguration(mqsConfigurationInstance);
+            });
+            Optional<Set<Class<?>>> tableClasses = nucleoDB.getTableClasses(scanPackages);
+            Optional<Set<Class<?>>> connectionClasses = nucleoDB.getConnectionClasses(scanPackages);
+            if (connectionClasses.isPresent()) {
+                for (Class<?> aClass : connectionClasses.get()) {
+                    nucleoDB.startConnection(aClass, dbType, readToTime, c -> {
+                        c.getConnectionConfig().setMqsConfiguration(mqsConfigurationInstance);
+                        c.getConnectionConfig().setEventListener(connectionEventListener);
+                        c.getConnectionConfig().setJsonExport(jsonExport);
+                        c.getConnectionConfig().setSaveChanges(storeState);
+                        c.getConnectionConfig().setLoadSaved(loadState);
+                        c.getConnectionConfig().setNodeFilter(connectionNodeFilter);
+                        c.getConnectionConfig().setConnectionFileName(
+                                Path.of(saveDirectory, "connection_" + c.getConnectionConfig().getLabel() + ".dat")
+                                        .toAbsolutePath()
+                                        .toString()
+                        );
+                    });
+                }
+            }
+            if (tableClasses.isPresent()) {
+                for (Class<?> aClass : tableClasses.get()) {
+                    nucleoDB.startTable(aClass, dbType, readToTime, c -> {
+                        c.getDataTableConfig().setMqsConfiguration(mqsConfigurationInstance);
+                        c.getDataTableConfig().setEventListener(dataTableEventListener);
+                        c.getDataTableConfig().setJsonExport(jsonExport);
+                        c.getDataTableConfig().setSaveChanges(storeState);
+                        c.getDataTableConfig().setLoadSave(loadState);
+                        c.getDataTableConfig().setNodeFilter(dataEntryNodeFilter);
+                        c.getDataTableConfig().setTableFileName(
+                                Path.of(saveDirectory, "table_" + c.getDataTableConfig().getTable() + ".dat")
+                                        .toAbsolutePath()
+                                        .toString()
+                        );
+                    });
+                }
+            }
+        } catch (IncorrectDataEntryClassException e) {
+            throw new RuntimeException(e);
+        } catch (MissingDataEntryConstructorsException e) {
+            throw new RuntimeException(e);
+        } catch (IntrospectionException e) {
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException(e);
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        } catch (InstantiationException e) {
+            throw new RuntimeException(e);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        Set<Class<?>> entityClasses = Sets.newHashSet();
+        entityClasses.addAll(nucleoDB.getTables().values().stream().map(c -> (Class<?>) c.getConfig().getDataEntryClass()).collect(Collectors.toList()));
+        entityClasses.addAll(nucleoDB.getConnections().values().stream().map(c -> (Class<?>) c.getConfig().getConnectionClass()).collect(Collectors.toList()));
+        ndbMappingContext.register(entityClasses);
+        ndbMappingContext.afterPropertiesSet();
+        return new NDBRepositoryFactory(nucleoDB, publisher, ndbMappingContext);
+    }
+
+    @Override
+    public boolean isSingleton() {
+        return true;
+    }
+
+    @Override
+    public void afterPropertiesSet() {
+        super.afterPropertiesSet();
+        Assert.notNull(nucleoDB, "NucleoDB must not be null");
+    }
+
+    public void setScanPackages(@NonNull String[] scanPackages) {
+        this.scanPackages = scanPackages;
+    }
+
+    public void setDbType(@NonNull NucleoDB.DBType dbType) {
+        this.dbType = dbType;
+    }
+
+    public void setMqsConfiguration(@NonNull String mqsConfiguration) {
+        this.mqsConfiguration = mqsConfiguration;
+    }
+
+    public void setReadToTime(@NonNull String readToTime) {
+        this.readToTime = readToTime;
+    }
+
+
+    public void setNodeFilterDataEntry(@NonNull String nodeFilterDataEntry) {
+        this.nodeFilterDataEntry = nodeFilterDataEntry;
+    }
+
+    public void setNodeFilterConnection(@NonNull String nodeFilterConnection) {
+        this.nodeFilterConnection = nodeFilterConnection;
+    }
+
+    @Override
+    public PersistentEntity<?, ?> getPersistentEntity() {
+        return ndbMappingContext.getRequiredPersistentEntity(getRepositoryInformation().getDomainType());
+    }
+
+    public void setPublisher(ApplicationEventPublisher publisher) {
+        this.publisher = publisher;
+    }
+
+    ConnectionEventListener connectionEventListener() {
+        return new ConnectionEventListener<Connection>() {
+            @Override
+            public void update(ConnectionUpdate update, Connection entry) {
+                publisher.publishEvent(new ConnectionUpdatedEvent(entry));
+            }
+
+            @Override
+            public void delete(ConnectionDelete delete, Connection entry) {
+                publisher.publishEvent(new ConnectionDeletedEvent(entry));
+            }
+
+            @Override
+            public void create(ConnectionCreate create, Connection entry) {
+                publisher.publishEvent(new ConnectionCreatedEvent(entry));
+            }
+        };
+    }
+
+    DataTableEventListener dataTableEventListener() {
+        return new DataTableEventListener<DataEntry>() {
+            @Override
+            public void update(Update update, DataEntry entry) {
+                publisher.publishEvent(new DataEntryUpdatedEvent(entry));
+            }
+
+            @Override
+            public void delete(Delete delete, DataEntry entry) {
+                publisher.publishEvent(new DataEntryDeletedEvent(entry));
+            }
+
+            @Override
+            public void create(Create create, DataEntry entry) {
+                publisher.publishEvent(new DataEntryCreatedEvent(entry));
+            }
+        };
+    }
+
+    @Nullable
+    public static NucleoDB getNucleoDB() {
+        return nucleoDB;
+    }
+
+    public static void setNucleoDB(@Nullable NucleoDB nucleoDB) {
+        NDBRepositoryFactoryBean.nucleoDB = nucleoDB;
+    }
+}
