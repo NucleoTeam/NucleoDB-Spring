@@ -29,12 +29,10 @@ public class NDBConnectionRepositoryImpl<C extends Connection<F, T>, ID extends 
   private @Nullable ConnectionHandler connectionHandler = null;
   private final NucleoDB nucleoDB;
   private final Class<C> classType;
-  private final ApplicationEventPublisher publisher;
-  public NDBConnectionRepositoryImpl(NucleoDB nucleoDB, Class<C> classType, ApplicationEventPublisher publisher) {
+  public NDBConnectionRepositoryImpl(NucleoDB nucleoDB, Class<C> classType) {
     this.nucleoDB = nucleoDB;
     this.classType = classType;
     this.connectionHandler = nucleoDB.getConnectionHandler(classType);
-    this.publisher = publisher;
   }
 
   @Override

@@ -34,8 +34,6 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
 
   private final NucleoDB nucleoDB;
 
-  private final ApplicationEventPublisher publisher;
-
   private final AbstractMappingContext mappingContext;
 
   /**
@@ -44,12 +42,11 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
    * @param nucleoDB       must not be {@literal null}
    * @param mappingContext
    */
-  public NDBRepositoryFactory(NucleoDB nucleoDB, ApplicationEventPublisher publisher, AbstractMappingContext<?, ?> mappingContext) {
+  public NDBRepositoryFactory(NucleoDB nucleoDB, AbstractMappingContext<?, ?> mappingContext) {
 
     Assert.notNull(nucleoDB, "NucleoDB must not be null");
 
     this.nucleoDB = nucleoDB;
-    this.publisher = publisher;
     this.mappingContext = mappingContext;
 
   }
@@ -67,7 +64,7 @@ public class NDBRepositoryFactory extends RepositoryFactorySupport{
 
   @Override
   protected Object getTargetRepository(RepositoryInformation repositoryInformation) {
-    return getTargetRepositoryViaReflection(repositoryInformation, nucleoDB, repositoryInformation.getDomainType(), publisher);
+    return getTargetRepositoryViaReflection(repositoryInformation, nucleoDB, repositoryInformation.getDomainType());
   }
 
   @Override

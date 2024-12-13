@@ -145,7 +145,7 @@ public class NDBRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
         entityClasses.addAll(nucleoDB.getConnections().values().stream().map(c -> (Class<?>) c.getConfig().getConnectionClass()).collect(Collectors.toList()));
         ndbMappingContext.register(entityClasses);
         ndbMappingContext.afterPropertiesSet();
-        return new NDBRepositoryFactory(nucleoDB, publisher, ndbMappingContext);
+        return new NDBRepositoryFactory(nucleoDB, ndbMappingContext);
     }
 
     @Override

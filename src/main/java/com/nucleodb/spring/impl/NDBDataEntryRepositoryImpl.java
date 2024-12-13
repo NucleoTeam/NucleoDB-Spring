@@ -24,12 +24,10 @@ public class NDBDataEntryRepositoryImpl<T extends DataEntry, ID> implements NDBD
     private final NucleoDB nucleoDB;
     private final Class<T> classType;
     private @Nullable Class<?> tableClass = null;
-    private final ApplicationEventPublisher publisher;
 
-    public NDBDataEntryRepositoryImpl(NucleoDB nucleoDB, Class<T> classType, ApplicationEventPublisher publisher) {
+    public NDBDataEntryRepositoryImpl(NucleoDB nucleoDB, Class<T> classType) {
         this.nucleoDB = nucleoDB;
         this.classType = classType;
-        this.publisher = publisher;
         Type[] actualTypeArguments = ((ParameterizedType) classType.getGenericSuperclass()).getActualTypeArguments();
         if (actualTypeArguments.length == 1) {
             this.tableClass = (Class<?>) actualTypeArguments[0];
